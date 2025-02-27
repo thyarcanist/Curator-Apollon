@@ -161,17 +161,56 @@ class SpotifyService:
             raise Exception(f"Failed to get access token: {str(e)}")
 
     def ensure_authenticated(self):
-        """Ensure we have a valid client credentials token"""
         if self.sp is None:
             try:
-                # Use client credentials flow
-                auth_manager = SpotifyClientCredentials(
+                # Define minimal required scopes for playlist access
+                SCOPES = "playlist-read-private playlist-read-collaborative"  # Only what we need
+                
+                self.auth_manager = SpotifyOAuth(
                     client_id=self.client_id,
-                    client_secret=self.client_secret
+                    client_secret=self.client_secret,
+                    redirect_uri="https://apollon.occybyte.com/callback",
+                    scope=SCOPES,
+                    cache_path=str(self.cache_path),
+                    open_browser=True,
+                    show_dialog=True
                 )
-                self.sp = spotipy.Spotify(auth_manager=auth_manager)
-                # Test the connection
-                self.sp.playlist("37i9dQZEVXbMDoHDwVN2tF")  # Test with a public playlist
+                
+                try:
+                    token_info = self.auth_manager.get_cached_token()
+                    if not token_info or self.auth_manager.is_token_expired(token_info):
+                        print("Getting new token...")
+                        auth_url = self.auth_manager.get_authorize_url()
+                        webbrowser.open(auth_url)
+                        
+                        # Show instructions to user
+                        messagebox.showinfo(
+                            "Spotify Authentication",
+                            "After authorizing in your browser:\n\n"
+                            "1. Copy the FULL URL from your browser\n"
+                            "2. Paste it in the next dialog"
+                        )
+                        
+                        response = simpledialog.askstring(
+                            "Spotify Authentication",
+                            "Please paste the FULL URL from your browser:",
+                            initialvalue="https://apollon.occybyte.com/callback?code="
+                        )
+                        
+                        if response:
+                            code = self.auth_manager.parse_response_code(response)
+                            token_info = self.auth_manager.get_access_token(code)
+                        else:
+                            raise Exception("Authentication cancelled")
+                    
+                    self.sp = spotipy.Spotify(auth_manager=self.auth_manager)
+                    
+                except Exception as e:
+                    print(f"Authentication error: {str(e)}")
+                    if self.cache_path.exists():
+                        self.cache_path.unlink()
+                    raise
+                    
             except Exception as e:
                 raise Exception(f"Authentication failed: {str(e)}")
     
@@ -208,68 +247,88 @@ class SpotifyService:
         try:
             playlist_id = self._extract_spotify_id(playlist_url)
             if not playlist_id:
-                raise ValueError("Invalid Spotify playlist URL format")
+                raise ValueError(
+                    "Invalid Spotify playlist URL format. Please use one of these formats:\n"
+                    "- https://open.spotify.com/playlist/37i9dQZF1DXcBWIGoYBM5M\n"
+                    "- spotify:playlist:37i9dQZF1DXcBWIGoYBM5M\n"
+                    "- Just the ID: 37i9dQZF1DXcBWIGoYBM5M"
+                )
             
-            # Get playlist details
-            playlist = self.sp.playlist(playlist_id)
-            if not playlist:
-                raise ValueError("Could not find playlist")
+            print(f"Attempting to import playlist: {playlist_id}")
             
-            print(f"Accessing playlist: {playlist['name']}")
-            
-            tracks = []
-            batch_size = 50
-            items = playlist['tracks']['items']
-            
-            for i in range(0, len(items), batch_size):
-                batch = items[i:i+batch_size]
-                track_ids = []
-                track_info = []
+            try:
+                # First try to get basic playlist info
+                playlist = self.sp.playlist(
+                    playlist_id,
+                    fields="name,tracks.total",
+                    market="US"  # Add market parameter
+                )
                 
-                for item in batch:
-                    if item['track'] and not item['track'].get('is_local', False):
-                        track_ids.append(item['track']['id'])
-                        track_info.append(item['track'])
-                
-                if track_ids:
-                    features = self.sp.audio_features(track_ids)
+                if not playlist:
+                    raise ValueError("Could not find playlist")
                     
-                    for track, feature in zip(track_info, features):
-                        if feature:
-                            tracks.append(Track(
-                                id=track['id'],
-                                title=track['name'],
-                                artist=track['artists'][0]['name'],
-                                bpm=feature['tempo'],
-                                key=self._convert_key(feature['key'], feature['mode']),
-                                camelot_position=self._get_camelot_position(
-                                    feature['key'], feature['mode']
-                                ),
-                                energy_level=feature['energy'],
-                                spotify_url=f"https://open.spotify.com/track/{track['id']}"
-                            ))
-                            print(f"Imported: {track['name']}")
-            
-            if not tracks:
-                raise Exception("No tracks could be imported")
+                print(f"Found playlist: {playlist['name']} with {playlist['tracks']['total']} tracks")
                 
-            return tracks
-            
+                # Get tracks with market parameter
+                results = self.sp.playlist_tracks(
+                    playlist_id,
+                    fields="items(track(id,name,artists,is_local))",
+                    market="US"
+                )
+                
+                if not results or not results['items']:
+                    raise Exception("No tracks found in playlist")
+                
+                tracks = []
+                for item in results['items']:
+                    if item['track'] and not item['track'].get('is_local', False):
+                        tracks.append(Track(
+                            id=item['track']['id'],
+                            title=item['track']['name'],
+                            artist=item['track']['artists'][0]['name'],
+                            bpm=item['track']['tempo'],
+                            key=self._convert_key(item['track']['key'], item['track']['mode']),
+                            camelot_position=self._get_camelot_position(item['track']['key'], 
+                                                                      item['track']['mode']),
+                            energy_level=item['track']['energy']
+                        ))
+                        print(f"Imported: {item['track']['name']}")
+                
+                if not tracks:
+                    raise Exception("No valid tracks could be imported")
+                
+                return tracks
+                
+            except Exception as e:
+                print(f"Error during playlist import: {str(e)}")
+                raise
+                
         except Exception as e:
             raise Exception(f"Playlist import failed: {str(e)}")
     
     def _extract_spotify_id(self, url: str) -> str:
         """Extract Spotify ID from various URL formats"""
+        print(f"Extracting ID from URL: {url}")  # Debug print
+        
+        # Clean the URL first
+        url = url.strip()
+        
         # Handle different Spotify URL formats
         patterns = [
-            r'spotify:(?:track|playlist):([a-zA-Z0-9]+)',  # Spotify URI
-            r'open\.spotify\.com/(?:track|playlist)/([a-zA-Z0-9]+)',  # Web URL
-            r'/([a-zA-Z0-9]+)(?:\?|$)'  # Simple ID or ID with query params
+            r'spotify:playlist:([a-zA-Z0-9]{22})',  # Spotify URI
+            r'open\.spotify\.com/playlist/([a-zA-Z0-9]{22})',  # Web URL
+            r'spotify\.com/playlist/([a-zA-Z0-9]{22})',  # Shortened URL
+            r'playlist/([a-zA-Z0-9]{22})',  # Path only
+            r'^([a-zA-Z0-9]{22})$'  # Just the ID
         ]
         
         for pattern in patterns:
             if match := re.search(pattern, url):
-                return match.group(1)
+                playlist_id = match.group(1)
+                print(f"Found playlist ID: {playlist_id}")  # Debug print
+                return playlist_id
+            
+        print("No valid playlist ID found")  # Debug print
         return None
     
     def _convert_key(self, key: int, mode: int) -> str:
@@ -313,3 +372,25 @@ class SpotifyService:
             (11, 0): '10A', # B minor
         }
         return camelot_wheel.get((key, mode), 'Unknown') 
+
+    def test_playlist_access(self, playlist_url: str) -> bool:
+        """Test if we can access a playlist"""
+        try:
+            playlist_id = self._extract_spotify_id(playlist_url)
+            if not playlist_id:
+                print("Could not extract playlist ID")
+                return False
+            
+            # Try to get just the playlist name
+            result = self.sp.playlist(
+                playlist_id,
+                fields="name",
+                market="US"
+            )
+            
+            print(f"Successfully accessed playlist: {result['name']}")
+            return True
+        
+        except Exception as e:
+            print(f"Error accessing playlist: {str(e)}")
+            return False 
