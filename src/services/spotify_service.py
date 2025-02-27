@@ -283,28 +283,62 @@ class SpotifyService:
                 tracks = []
                 items = playlist['tracks']['items']
                 
-                # Process tracks without audio features
                 for item in items:
                     if not item['track'] or item['track'].get('is_local', False):
                         continue
                     
                     track = item['track']
-                    tracks.append(Track(
-                        id=track['id'],
-                        title=track['name'],
-                        artist=track['artists'][0]['name'],
-                        bpm=0,  # Default value since we can't get audio features
-                        key="Unknown",  # Default value
-                        camelot_position=0,  # Default value
-                        energy_level=0,  # Default value
-                        spotify_url=f"https://open.spotify.com/track/{track['id']}"
-                    ))
-                    print(f"Imported track: {track['name']} by {track['artists'][0]['name']}")
+                    print(f"Processing: {track['name']} by {track['artists'][0]['name']}")
+                    
+                    try:
+                        # Try to get audio features one at a time
+                        features = self.sp.audio_features(track['id'])[0]
+                        if features:
+                            tracks.append(Track(
+                                id=track['id'],
+                                title=track['name'],
+                                artist=track['artists'][0]['name'],
+                                bpm=features['tempo'],
+                                key=self._convert_key(features['key'], features['mode']),
+                                camelot_position=self._get_camelot_position(
+                                    features['key'], features['mode']
+                                ),
+                                energy_level=features['energy'],
+                                spotify_url=f"https://open.spotify.com/track/{track['id']}"
+                            ))
+                            print(f"✓ Imported with audio features")
+                        else:
+                            # Fallback to basic track info if no features available
+                            tracks.append(Track(
+                                id=track['id'],
+                                title=track['name'],
+                                artist=track['artists'][0]['name'],
+                                bpm=0,
+                                key="Unknown",
+                                camelot_position=0,
+                                energy_level=0,
+                                spotify_url=f"https://open.spotify.com/track/{track['id']}"
+                            ))
+                            print("! Imported without audio features")
+                    except Exception as e:
+                        print(f"! Error getting audio features: {str(e)}")
+                        # Still add the track without audio features
+                        tracks.append(Track(
+                            id=track['id'],
+                            title=track['name'],
+                            artist=track['artists'][0]['name'],
+                            bpm=0,
+                            key="Unknown",
+                            camelot_position=0,
+                            energy_level=0,
+                            spotify_url=f"https://open.spotify.com/track/{track['id']}"
+                        ))
                 
                 if not tracks:
                     raise Exception("No tracks could be imported")
                 
-                print(f"Successfully imported {len(tracks)} tracks (without audio features)")
+                print(f"\nImport Summary:")
+                print(f"Total tracks: {len(tracks)}")
                 return tracks
                 
             except Exception as e:
