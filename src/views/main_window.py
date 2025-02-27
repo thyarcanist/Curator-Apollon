@@ -552,44 +552,46 @@ class MainWindow:
     def _remove_selected(self):
         """Remove selected tracks from the library"""
         selected_items = self.track_list.selection()
-        for item_id in selected_items:
-            values = self.track_list.item(item_id)['values']
-            # Find and remove the track
-            for track in self.library.get_all_tracks():
-                if track.title == values[0] and track.artist == values[1]:
-                    self.library.remove_track(track.id)
-                    break 
+        if not selected_items:
+            return
+            
+        msg = "Are you sure you want to remove the selected track?" if len(selected_items) == 1 \
+              else f"Are you sure you want to remove {len(selected_items)} tracks?"
+            
+        dialog = ScaledMessageDialog(
+            self.root,
+            "Confirm Remove",
+            msg,
+            buttons=['Yes:primary', 'No:secondary']
+        )
+        
+        if dialog.result == 'Yes':
+            tracks = self.library.get_all_tracks()
+            for item in selected_items:
+                idx = self.track_list.index(item)
+                if 0 <= idx < len(tracks):
+                    track = tracks[idx]
+                    self.library.remove_track(track)
+            
+            self._update_analysis()
+            self.set_status(f"Removed {len(selected_items)} track(s)")
 
     def _remove_all(self):
         """Remove all tracks from the library"""
-        if len(self.library.get_all_tracks()) == 0:
-            Messagebox.show_info(
-                "No Tracks",
-                "Library is already empty."
-            )
+        if not self.library.get_all_tracks():
             return
             
-        # Ask for confirmation
-        confirm = Messagebox.show_question(
-            "Remove All Tracks",
-            "Are you sure you want to remove all tracks from the library?",
+        dialog = ScaledMessageDialog(
+            self.root,
+            "Confirm Remove All",
+            "Are you sure you want to remove ALL tracks?",
             buttons=['Yes:danger', 'No:secondary']
         )
         
-        if confirm == 'Yes':
-            self.set_status("Removing all tracks...")
-            # Get all track IDs and remove them
-            for track in self.library.get_all_tracks():
-                self.library.remove_track(track.id)
-            
-            # Reset current playlist URL since we cleared everything
-            self.current_playlist_url = None
-            
-            self.set_status("All tracks removed")
-            Messagebox.show_info(
-                "Success",
-                "All tracks have been removed from the library."
-            )
+        if dialog.result == 'Yes':
+            self.library.clear()
+            self._update_analysis()
+            self.set_status("Removed all tracks")
 
     def export_playlist(self):
         """Handle playlist export"""
@@ -1239,4 +1241,76 @@ class MainWindow:
             
             self.musical_values['Time Signatures:'].config(text=", ".join(sig_display))
         else:
-            self.musical_values['Time Signatures:'].config(text="N/A") 
+            self.musical_values['Time Signatures:'].config(text="N/A")
+
+class ScaledMessageDialog(ttk.Toplevel):
+    """Custom dialog with uniform sizing and proper text scaling"""
+    def __init__(self, parent, title, message, buttons=None, **kwargs):
+        super().__init__(parent, **kwargs)
+        
+        self.title(title)
+        self.result = None
+        
+        # Make dialog modal
+        self.transient(parent)
+        self.grab_set()
+        
+        # Configure grid
+        self.grid_columnconfigure(0, weight=1)
+        self.grid_rowconfigure(1, weight=1)
+        
+        # Message area with word wrap
+        msg_frame = ttk.Frame(self)
+        msg_frame.grid(row=0, column=0, padx=20, pady=20, sticky='nsew')
+        msg_frame.grid_columnconfigure(0, weight=1)
+        
+        msg_label = ttk.Label(
+            msg_frame, 
+            text=message,
+            wraplength=400,  # Wrap text at 400 pixels
+            justify='center'
+        )
+        msg_label.grid(sticky='nsew')
+        
+        # Button area
+        btn_frame = ttk.Frame(self)
+        btn_frame.grid(row=1, column=0, padx=20, pady=(0, 20), sticky='ew')
+        
+        if not buttons:
+            buttons = ['OK:primary']
+            
+        # Center buttons
+        btn_frame.grid_columnconfigure(len(buttons)-1, weight=1)
+        
+        for i, btn_spec in enumerate(buttons):
+            text, style = btn_spec.split(':')
+            btn = ttk.Button(
+                btn_frame,
+                text=text,
+                bootstyle=style,
+                command=lambda t=text: self._on_button(t),
+                width=10  # Uniform button width
+            )
+            btn.grid(row=0, column=i, padx=5)
+        
+        # Center the dialog on parent
+        self.update_idletasks()
+        width = max(400, self.winfo_reqwidth() + 40)  # Min width 400
+        height = self.winfo_reqheight() + 20
+        
+        x = parent.winfo_rootx() + (parent.winfo_width() - width) // 2
+        y = parent.winfo_rooty() + (parent.winfo_height() - height) // 2
+        
+        self.geometry(f"{width}x{height}+{x}+{y}")
+        
+        # Set minimum size
+        self.minsize(width, height)
+        
+        # Make dialog visible and wait for it to close
+        self.wait_visibility()
+        self.focus_set()
+        self.wait_window()
+    
+    def _on_button(self, value):
+        self.result = value
+        self.destroy() 
