@@ -106,6 +106,11 @@ class MainWindow:
         self.notebook.add(self.library_frame, text='Library')
         self._setup_library_view()
         
+        # Playlist Info View
+        self.playlist_info_frame = ttk.Frame(self.notebook)
+        self.notebook.add(self.playlist_info_frame, text='Playlist Info')
+        self._setup_playlist_info_view()
+        
         # Analysis View
         self.analysis_frame = ttk.Frame(self.notebook)
         self.notebook.add(self.analysis_frame, text='Analysis')
@@ -164,6 +169,67 @@ class MainWindow:
         )
         self.export_button.pack(side="left", padx=5)
     
+    def _setup_playlist_info_view(self):
+        """Setup the playlist information view"""
+        # Create main sections
+        musical_stats = ttk.LabelFrame(self.playlist_info_frame, text='Musical Statistics')
+        musical_stats.pack(fill='x', padx=10, pady=5)
+        
+        literary_stats = ttk.LabelFrame(self.playlist_info_frame, text='Literary Analysis')
+        literary_stats.pack(fill='x', padx=10, pady=5)
+        
+        # Musical Statistics Section
+        musical_grid = ttk.Frame(musical_stats)
+        musical_grid.pack(padx=10, pady=5)
+        
+        musical_labels = [
+            ('Average BPM:', '0'),
+            ('Average Key:', 'N/A'),
+            ('Max BPM:', '0'),
+            ('Min BPM:', '0'),
+            ('Most Common Key:', 'N/A'),
+            ('Key Distribution:', 'N/A')
+        ]
+        
+        self.musical_values = {}
+        for i, (label, default) in enumerate(musical_labels):
+            ttk.Label(musical_grid, text=label).grid(row=i, column=0, sticky='e', padx=5, pady=2)
+            value_label = ttk.Label(musical_grid, text=default)
+            value_label.grid(row=i, column=1, sticky='w', padx=5, pady=2)
+            self.musical_values[label] = value_label
+        
+        # Literary Statistics Section
+        literary_grid = ttk.Frame(literary_stats)
+        literary_grid.pack(padx=10, pady=5)
+        
+        literary_labels = [
+            ('Most Common Artist:', 'N/A'),
+            ('Most Used Word (count):', 'N/A'),
+            ('Least Used Word (count):', 'N/A'),
+            ('Top Characters:', 'N/A'),
+            ('Special Characters:', 'N/A'),
+            ('Numbers Used:', 'N/A'),
+            ('Average Title Length:', '0'),
+            ('Unique Artists:', '0'),
+            ('Repeated Words:', 'N/A'),
+            ('Title Pattern:', 'N/A')
+        ]
+        
+        self.literary_values = {}
+        for i, (label, default) in enumerate(literary_labels):
+            ttk.Label(literary_grid, text=label).grid(row=i, column=0, sticky='e', padx=5, pady=2)
+            value_label = ttk.Label(literary_grid, text=default)
+            value_label.grid(row=i, column=1, sticky='w', padx=5, pady=2)
+            self.literary_values[label] = value_label
+        
+        # Refresh button
+        ttk.Button(
+            self.playlist_info_frame,
+            text="Refresh Statistics",
+            command=self._update_playlist_stats,
+            bootstyle="secondary"
+        ).pack(pady=10)
+
     def _setup_analysis_view(self):
         # Analysis details
         self.analysis_details = ttk.LabelFrame(self.analysis_frame, text='Track Analysis')
@@ -187,6 +253,7 @@ class MainWindow:
     def update(self):
         """Update UI when library changes"""
         self._refresh_track_list()
+        self._update_playlist_stats()
     
     def _refresh_track_list(self):
         self.track_list.delete(*self.track_list.get_children())
@@ -425,4 +492,136 @@ class MainWindow:
     def set_status(self, message: str):
         """Update status bar message"""
         self.status_bar.config(text=message)
-        self.root.update() 
+        self.root.update()
+
+    def _update_playlist_stats(self):
+        """Update all playlist statistics"""
+        tracks = self.library.get_all_tracks()
+        if not tracks:
+            self._reset_stats()
+            return
+        
+        # Calculate Musical Stats
+        bpms = [t.bpm for t in tracks if t.bpm > 0]
+        if bpms:
+            avg_bpm = sum(bpms) / len(bpms)
+            max_bpm = max(bpms)
+            min_bpm = min(bpms)
+            self.musical_values['Average BPM:'].config(text=f"{avg_bpm:.1f}")
+            self.musical_values['Max BPM:'].config(text=f"{max_bpm:.1f}")
+            self.musical_values['Min BPM:'].config(text=f"{min_bpm:.1f}")
+        
+        # Calculate Literary Stats
+        artists = [t.artist for t in tracks]
+        titles = [t.title for t in tracks]
+        
+        # Artist Analysis
+        artist_counts = {}
+        for artist in artists:
+            artist_counts[artist] = artist_counts.get(artist, 0) + 1
+        
+        if artist_counts:
+            most_common_artist = max(artist_counts.items(), key=lambda x: x[1])
+            self.literary_values['Most Common Artist:'].config(
+                text=f"{most_common_artist[0]} ({most_common_artist[1]} tracks)"
+            )
+            self.literary_values['Unique Artists:'].config(text=str(len(set(artists))))
+        
+        # Character Analysis
+        all_chars = ''.join(titles).lower()
+        char_counts = {}
+        special_chars = set()
+        numbers = set()
+        
+        for char in all_chars:
+            if char.isalnum():
+                char_counts[char] = char_counts.get(char, 0) + 1
+                if char.isnumeric():
+                    numbers.add(char)
+            elif not char.isspace():
+                special_chars.add(char)
+        
+        # Sort characters by frequency
+        top_chars = sorted(
+            [(k, v) for k, v in char_counts.items() if k.isalpha()],
+            key=lambda x: x[1],
+            reverse=True
+        )[:8]  # Top 8 characters
+        
+        self.literary_values['Top Characters:'].config(
+            text=f"[{', '.join(f'{c[0]}({c[1]})' for c in top_chars)}]"
+        )
+        
+        if special_chars:
+            self.literary_values['Special Characters:'].config(
+                text=f"[{', '.join(sorted(special_chars))}]"
+            )
+        
+        if numbers:
+            self.literary_values['Numbers Used:'].config(
+                text=f"[{', '.join(sorted(numbers))}]"
+            )
+        
+        # Enhanced Word Analysis
+        words = []
+        word_in_tracks = {}  # Count how many tracks contain each word
+        
+        for track in tracks:
+            title_words = [w.lower() for w in track.title.split()]
+            words.extend(title_words)
+            
+            # Count unique words per track
+            seen_words = set(title_words)
+            for word in seen_words:
+                word_in_tracks[word] = word_in_tracks.get(word, 0) + 1
+        
+        if words:
+            # Most/least used words with track count
+            most_used = max(word_in_tracks.items(), key=lambda x: x[1])
+            least_used = min(word_in_tracks.items(), key=lambda x: x[1])
+            
+            self.literary_values['Most Used Word (count):'].config(
+                text=f"{most_used[0]} (in {most_used[1]} tracks)"
+            )
+            self.literary_values['Least Used Word (count):'].config(
+                text=f"{least_used[0]} (in {least_used[1]} tracks)"
+            )
+            
+            # Find words that appear multiple times in titles
+            repeated = [word for word, count in word_in_tracks.items() if count > 1]
+            if repeated:
+                self.literary_values['Repeated Words:'].config(
+                    text=f"{', '.join(sorted(repeated)[:5])}..."
+                )
+            
+            # Analyze title patterns
+            patterns = []
+            if any('feat.' in t.lower() for t in titles):
+                patterns.append('feat.')
+            if any('remix' in t.lower() for t in titles):
+                patterns.append('remix')
+            if any('ft.' in t.lower() for t in titles):
+                patterns.append('ft.')
+            if any('prod.' in t.lower() for t in titles):
+                patterns.append('prod.')
+            
+            if patterns:
+                self.literary_values['Title Pattern:'].config(
+                    text=f"Common: {', '.join(patterns)}"
+                )
+            
+            # Average title length
+            avg_length = sum(len(title) for title in titles) / len(titles)
+            self.literary_values['Average Title Length:'].config(
+                text=f"{avg_length:.1f} chars"
+            )
+        
+        self.set_status("Statistics updated")
+
+    def _reset_stats(self):
+        """Reset all statistics to default values"""
+        for label in self.musical_values.values():
+            label.config(text="N/A")
+        for label in self.literary_values.values():
+            label.config(text="N/A")
+        self.set_status("Statistics reset - no tracks in library") 
