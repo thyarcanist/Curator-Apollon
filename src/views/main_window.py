@@ -1,5 +1,7 @@
-import tkinter as tk
-from tkinter import ttk, messagebox
+import ttkbootstrap as ttk
+from ttkbootstrap.constants import *
+from ttkbootstrap.dialogs import Messagebox
+from ttkbootstrap.scrolled import ScrolledFrame
 from typing import List
 from models.library import MusicLibrary, Track
 from services.spotify_service import SpotifyService
@@ -13,6 +15,53 @@ class MainWindow:
         self.library = library
         self.spotify_service = spotify_service
         self.analysis_service = analysis_service
+        
+        # Custom theme colors
+        self.style = ttk.Style(theme="darkly")
+        
+        # Define Apollon color scheme
+        COLORS = {
+            'black': '#000000',
+            'gold': '#FFD700',
+            'dark_grey': '#1E1E1E',
+            'light_grey': '#2D2D2D',
+            'white': '#FFFFFF'
+        }
+        
+        # Configure custom styles
+        self.style.configure("Treeview",
+            background=COLORS['dark_grey'],
+            foreground=COLORS['gold'],
+            fieldbackground=COLORS['dark_grey'],
+            rowheight=25,
+            font=('Segoe UI', 10)
+        )
+        
+        self.style.configure("TButton",
+            font=('Segoe UI', 10),
+            background=COLORS['black'],
+            foreground=COLORS['gold']
+        )
+        
+        self.style.configure("TLabel",
+            background=COLORS['dark_grey'],
+            foreground=COLORS['gold']
+        )
+        
+        self.style.configure("TFrame",
+            background=COLORS['dark_grey']
+        )
+        
+        self.style.configure("TNotebook",
+            background=COLORS['dark_grey'],
+            foreground=COLORS['gold']
+        )
+        
+        self.style.configure("TNotebook.Tab",
+            background=COLORS['black'],
+            foreground=COLORS['gold'],
+            padding=[10, 5]
+        )
         
         self._setup_ui()
         self.library.add_observer(self)
@@ -38,25 +87,39 @@ class MainWindow:
         self._setup_discovery_view()
     
     def _setup_library_view(self):
-        # Track list
+        # Track list with modern styling
         self.track_list = ttk.Treeview(self.library_frame, 
                                       columns=('Title', 'Artist', 'BPM', 'Key'),
-                                      show='headings')
-        self.track_list.heading('Title', text='Title')
-        self.track_list.heading('Artist', text='Artist')
-        self.track_list.heading('BPM', text='BPM')
-        self.track_list.heading('Key', text='Key')
-        self.track_list.pack(expand=True, fill='both')
+                                      show='headings',
+                                      bootstyle="dark")
         
-        # Control buttons
+        # Configure columns
+        for col in ('Title', 'Artist', 'BPM', 'Key'):
+            self.track_list.heading(col, text=col)
+            self.track_list.column(col, minwidth=100)
+        
+        # Add scrollbar
+        scrollbar = ttk.Scrollbar(self.library_frame, 
+                                orient="vertical", 
+                                command=self.track_list.yview)
+        self.track_list.configure(yscrollcommand=scrollbar.set)
+        
+        # Pack with modern spacing
+        self.track_list.pack(expand=True, fill='both', padx=10, pady=5, side='left')
+        scrollbar.pack(fill='y', pady=5, side='right')
+        
+        # Control buttons in a modern layout
         controls = ttk.Frame(self.library_frame)
-        controls.pack(fill='x', pady=5)
+        controls.pack(fill='x', pady=10, padx=10)
         
         ttk.Button(controls, text='Add Track', 
+                  bootstyle="primary",
                   command=self._add_track_dialog).pack(side='left', padx=5)
         ttk.Button(controls, text='Import Playlist', 
+                  bootstyle="primary",
                   command=self._import_playlist_dialog).pack(side='left', padx=5)
         ttk.Button(controls, text='Remove Selected', 
+                  bootstyle="danger",
                   command=self._remove_selected).pack(side='left', padx=5)
     
     def _setup_analysis_view(self):
@@ -95,7 +158,7 @@ class MainWindow:
 
     def _add_track_dialog(self):
         """Open dialog for adding a track"""
-        dialog = tk.Toplevel(self.root)
+        dialog = ttk.Toplevel(self.root)
         dialog.title("Add Track")
         dialog.geometry("400x400")
         
@@ -169,7 +232,7 @@ class MainWindow:
     
     def _import_playlist_dialog(self):
         """Open dialog for importing a Spotify playlist"""
-        dialog = tk.Toplevel(self.root)
+        dialog = ttk.Toplevel(self.root)
         dialog.title("Import Spotify Playlist")
         dialog.geometry("500x150")
         
@@ -180,16 +243,18 @@ class MainWindow:
         def handle_import():
             try:
                 # Show authentication instructions
-                messagebox.showinfo(
-                    "Spotify Authentication",
-                    "You will be redirected to Spotify to authenticate.\n\n"
-                    "After authorizing, you will be redirected to apollon.occybyte.com.\n\n"
-                    "Copy the FULL URL from your browser and paste it in the next dialog."
+                Messagebox.show_info(
+                    message="You will be redirected to Spotify to authenticate.\n\n"
+                           "After authorizing, the import will proceed automatically.",
+                    title="Spotify Authentication"
                 )
                 
                 url = url_entry.get()
                 if not url:
-                    messagebox.showerror("Error", "Please enter a playlist URL")
+                    Messagebox.show_error(
+                        message="Please enter a playlist URL",
+                        title="Error"
+                    )
                     return
                     
                 tracks = self.spotify_service.import_playlist(url)
@@ -198,16 +263,26 @@ class MainWindow:
                     for track in tracks:
                         self.library.add_track(track)
                     dialog.destroy()
-                    messagebox.showinfo("Success", 
-                                      f"Successfully imported {len(tracks)} tracks\n\n"
-                                      f"First track: {tracks[0].title} by {tracks[0].artist}")
+                    Messagebox.show_info(
+                        message=f"Successfully imported {len(tracks)} tracks\n\n"
+                                f"First track: {tracks[0].title} by {tracks[0].artist}",
+                        title="Success"
+                    )
                 else:
-                    messagebox.showerror("Error", "No tracks were imported")
+                    Messagebox.show_error(
+                        message="No tracks were imported",
+                        title="Error"
+                    )
                     
             except Exception as e:
-                messagebox.showerror("Error", str(e))
+                Messagebox.show_error(
+                    message=str(e),
+                    title="Error"
+                )
         
-        ttk.Button(dialog, text="Import", command=handle_import).pack(pady=20)
+        ttk.Button(dialog, text="Import", 
+                  bootstyle="primary-outline",
+                  command=handle_import).pack(pady=20)
     
     def _remove_selected(self):
         """Remove selected tracks from the library"""
