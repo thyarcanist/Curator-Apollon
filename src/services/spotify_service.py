@@ -98,13 +98,35 @@ class CallbackHandler(http.server.SimpleHTTPRequestHandler):
 
 class SpotifyService:
     def __init__(self):
+        print("Initializing SpotifyService...")
         self.client_id = "55c875d209d94fdf963a31243f5d6fdb"
         self.client_secret = "cf4f384ddf3c46c49e8ca8d15d3b71ba"
         self.token = None
         self.sp = None
         self._setup_cache()
-        self.server = None
-        self.server_thread = None
+        
+        # Initialize auth manager during construction
+        print("Setting up OAuth manager...")
+        self.auth_manager = SpotifyOAuth(
+            client_id=self.client_id,
+            client_secret=self.client_secret,
+            redirect_uri="https://apollon.occybyte.com/callback",
+            scope="playlist-read-private playlist-read-collaborative",
+            cache_path=str(self.cache_path),
+            open_browser=False,  # Don't open browser yet
+            show_dialog=True
+        )
+        
+        # Try to get cached token
+        try:
+            print("Checking for cached token...")
+            token_info = self.auth_manager.get_cached_token()
+            if token_info and not self.auth_manager.is_token_expired(token_info):
+                print("Found valid cached token")
+                self.sp = spotipy.Spotify(auth_manager=self.auth_manager)
+                print("Spotify client initialized from cache")
+        except Exception as e:
+            print(f"Cache initialization error (non-fatal): {str(e)}")
     
     def _setup_cache(self):
         self.cache_dir = Path.home() / '.cache' / 'apollon'
@@ -165,54 +187,54 @@ class SpotifyService:
     def ensure_authenticated(self):
         """Ensure we have a valid OAuth token"""
         if self.sp is None:
+            print("No Spotify client exists, initializing...")
             try:
-                self.auth_manager = SpotifyOAuth(
-                    client_id=self.client_id,
-                    client_secret=self.client_secret,
-                    redirect_uri="https://apollon.occybyte.com/callback",
-                    scope="playlist-read-private playlist-read-collaborative user-library-read",
-                    cache_path=str(self.cache_path),
-                    open_browser=True,
-                    show_dialog=True
-                )
+                print("Checking for cached token...")
+                token_info = self.auth_manager.get_cached_token()
                 
-                try:
-                    token_info = self.auth_manager.get_cached_token()
-                    if not token_info or self.auth_manager.is_token_expired(token_info):
-                        print("Getting new token...")
-                        auth_url = self.auth_manager.get_authorize_url()
-                        webbrowser.open(auth_url)
-                        
-                        # Show instructions using ttkbootstrap's Messagebox
-                        Messagebox.show_info(
-                            message="After authorizing in your browser:\n\n"
-                                   "1. Copy the FULL URL from your browser\n"
-                                   "2. Paste it in the next dialog",
-                            title="Spotify Authentication"
-                        )
-                        
-                        response = simpledialog.askstring(
-                            "Spotify Authentication",
-                            "Please paste the FULL URL from your browser:",
-                            initialvalue="https://apollon.occybyte.com/callback?code="
-                        )
-                        
-                        if response:
-                            code = self.auth_manager.parse_response_code(response)
-                            token_info = self.auth_manager.get_access_token(code)
-                        else:
-                            raise Exception("Authentication cancelled")
+                if not token_info or self.auth_manager.is_token_expired(token_info):
+                    print("No valid cached token, starting new authentication...")
+                    auth_url = self.auth_manager.get_authorize_url()
+                    print(f"Opening auth URL: {auth_url}")
+                    webbrowser.open(auth_url)
                     
-                    self.sp = spotipy.Spotify(auth_manager=self.auth_manager)
+                    # Show instructions
+                    Messagebox.show_info(
+                        message="After authorizing in your browser:\n\n"
+                               "1. Copy the FULL URL from your browser\n"
+                               "2. Paste it in the next dialog",
+                        title="Spotify Authentication"
+                    )
                     
-                except Exception as e:
-                    print(f"Authentication error: {str(e)}")
-                    if self.cache_path.exists():
-                        self.cache_path.unlink()
-                    raise
+                    response = simpledialog.askstring(
+                        "Spotify Authentication",
+                        "Please paste the FULL URL from your browser:",
+                        initialvalue="https://apollon.occybyte.com/callback?code="
+                    )
                     
+                    if response:
+                        print("Got response URL, extracting code...")
+                        code = self.auth_manager.parse_response_code(response)
+                        print("Getting access token...")
+                        token_info = self.auth_manager.get_access_token(code)
+                    else:
+                        raise Exception("Authentication cancelled by user")
+                else:
+                    print("Using cached token")
+                
+                print("Initializing Spotify client...")
+                self.sp = spotipy.Spotify(auth_manager=self.auth_manager)
+                print("Spotify client initialized successfully")
+                
             except Exception as e:
-                raise Exception(f"Authentication failed: {str(e)}")
+                print(f"Error during authentication: {str(e)}")
+                if self.cache_path.exists():
+                    print("Removing invalid cache file...")
+                    self.cache_path.unlink()
+                raise
+                
+        except Exception as e:
+            raise Exception(f"Failed to initialize Spotify client: {str(e)}")
     
     def get_track_info(self, spotify_url: str) -> Track:
         """Get track info from Spotify URL"""
@@ -421,24 +443,34 @@ class SpotifyService:
     def debug_auth(self):
         """Debug authentication status"""
         try:
+            print("\n=== Starting Authentication Debug ===")
+            
+            if self.sp:
+                print("Spotify client already initialized, testing connection...")
+            else:
+                print("No Spotify client, starting authentication...")
+                self.ensure_authenticated()
+            
             if not self.sp:
-                print("No Spotify client initialized")
+                print("Failed to initialize Spotify client")
                 return False
             
-            # Try to get current user info
+            print("Testing API access...")
             try:
                 me = self.sp.me()
-                print(f"Authenticated as: {me['display_name']} ({me['id']})")
+                print(f"✓ Successfully authenticated as: {me['display_name']} ({me['id']})")
                 
-                # Try to get a known public playlist
                 playlist = self.sp.playlist("37i9dQZF1DXcBWIGoYBM5M")
-                print(f"Successfully accessed test playlist: {playlist['name']}")
+                print(f"✓ Successfully accessed test playlist: {playlist['name']}")
                 
+                print("=== Authentication Debug Complete ===\n")
                 return True
+                
             except Exception as e:
-                print(f"API test failed: {str(e)}")
+                print(f"✗ API test failed: {str(e)}")
                 return False
             
         except Exception as e:
-            print(f"Debug error: {str(e)}")
+            print(f"✗ Debug error: {str(e)}")
+            print("=== Authentication Debug Failed ===\n")
             return False 

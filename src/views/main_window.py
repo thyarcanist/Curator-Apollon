@@ -234,19 +234,27 @@ class MainWindow:
         """Open dialog for importing a Spotify playlist"""
         dialog = ttk.Toplevel(self.root)
         dialog.title("Import Spotify Playlist")
-        dialog.geometry("500x150")
+        dialog.geometry("500x200")  # Made taller for debug info
         
-        # Add debug button
+        # Status label
+        status_label = ttk.Label(dialog, text="Checking authentication status...")
+        status_label.pack(pady=5)
+        
         def check_auth():
+            status_label.config(text="Testing authentication...")
+            dialog.update()
+            
             if self.spotify_service.debug_auth():
+                status_label.config(text="Authentication successful!")
                 Messagebox.show_info(
-                    message="Authentication successful!",
-                    title="Debug"
+                    message="Successfully authenticated with Spotify!",
+                    title="Authentication Success"
                 )
             else:
+                status_label.config(text="Authentication failed - check console for details")
                 Messagebox.show_error(
-                    message="Authentication failed!",
-                    title="Debug"
+                    message="Authentication failed.\nPlease check the console for error details.",
+                    title="Authentication Error"
                 )
         
         ttk.Button(dialog, text="Check Auth", 
