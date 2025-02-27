@@ -142,18 +142,50 @@ class SpotifyService:
                 self.auth_manager = SpotifyOAuth(
                     client_id="55c875d209d94fdf963a31243f5d6fdb",
                     client_secret="cf4f384ddf3c46c49e8ca8d15d3b71ba",
-                    redirect_uri=f"http://localhost:{port}",
-                    scope="playlist-read-private playlist-read-collaborative user-library-read",
-                    cache_path=str(self.cache_path)
+                    redirect_uri="https://apollon.occybyte.com/callback",
+                    scope=" ".join([
+                        "playlist-read-private",
+                        "playlist-read-collaborative",
+                        "playlist-read-public",
+                        "user-library-read",
+                        "user-read-private",
+                        "user-read-email"
+                    ]),
+                    cache_path=str(self.cache_path),
+                    open_browser=True
                 )
                 
                 auth_url = self.auth_manager.get_authorize_url()
                 webbrowser.open(auth_url)
                 
                 try:
-                    code = auth_queue.get(timeout=300)  # 5 minute timeout
-                    self.sp = spotipy.Spotify(auth_manager=self.auth_manager)
-                    self.sp.current_user()  # Test connection
+                    # Show instructions to user
+                    messagebox.showinfo(
+                        message="After authorizing in your browser:\n\n"
+                               "1. Copy the FULL URL from your browser\n"
+                               "2. Paste it in the next dialog",
+                        title="Spotify Authentication"
+                    )
+                    
+                    # Get the full URL from user
+                    response = simpledialog.askstring(
+                        "Spotify Authentication",
+                        "Please paste the FULL URL from your browser:",
+                        initialvalue="https://apollon.occybyte.com/callback?code="
+                    )
+                    
+                    if response:
+                        # Extract code from URL
+                        code = self.auth_manager.parse_response_code(response)
+                        # Get token with code
+                        self.auth_manager.get_access_token(code)
+                        # Create Spotify client
+                        self.sp = spotipy.Spotify(auth_manager=self.auth_manager)
+                        # Test connection
+                        self.sp.current_user()
+                    else:
+                        raise Exception("Authentication cancelled")
+                    
                 finally:
                     self._stop_auth_server()
                 
@@ -197,72 +229,71 @@ class SpotifyService:
             if not playlist_id:
                 raise ValueError("Invalid Spotify playlist URL format")
             
-            # Get playlist details first
+            # Get playlist details with more fields
             try:
-                playlist = self.sp.playlist(playlist_id, fields="name,tracks.total")
+                playlist = self.sp.playlist(playlist_id, 
+                    fields="name,tracks.total,owner.display_name,public")
                 if not playlist:
                     raise ValueError("Could not find playlist")
+                    
+                print(f"Playlist details: {playlist}")  # Debug info
+                
             except Exception as e:
                 raise ValueError(f"Could not access playlist: {str(e)}")
             
             messagebox.showinfo("Import Status", 
                               f"Found playlist: {playlist['name']}\n"
-                              f"Attempting to import tracks...")
+                              f"Owner: {playlist['owner']['display_name']}\n"
+                              f"Public: {playlist.get('public', False)}\n"
+                              f"Total tracks: {playlist['tracks']['total']}")
             
             tracks = []
             offset = 0
-            limit = 20  # Process in smaller batches
+            limit = 50  # Increased batch size
             
             while True:
                 try:
-                    # Get tracks in smaller batches
                     results = self.sp.playlist_tracks(
                         playlist_id,
                         offset=offset,
                         limit=limit,
-                        fields="items(track(id,name,artists,is_local)),next"
+                        fields="items(track(id,name,artists,is_local)),next,total"
                     )
                     
                     if not results or not results['items']:
                         break
                     
-                    # Process tracks in even smaller batches for audio features
-                    for i in range(0, len(results['items']), 5):
-                        batch = results['items'][i:i+5]
-                        batch_ids = []
-                        batch_tracks = []
+                    batch_ids = []
+                    batch_tracks = []
+                    
+                    # Collect all valid tracks from this batch
+                    for item in results['items']:
+                        if (item['track'] and 
+                            not item['track'].get('is_local', False) and 
+                            item['track'].get('id')):
+                            batch_ids.append(item['track']['id'])
+                            batch_tracks.append(item['track'])
+                    
+                    if batch_ids:
+                        # Get audio features for the entire batch
+                        features = self.sp.audio_features(batch_ids)
                         
-                        for item in batch:
-                            if (item['track'] and 
-                                not item['track'].get('is_local', False) and 
-                                item['track'].get('id')):
-                                batch_ids.append(item['track']['id'])
-                                batch_tracks.append(item['track'])
-                        
-                        if batch_ids:
-                            try:
-                                # Get audio features for small batch
-                                features = self.sp.audio_features(batch_ids)
-                                
-                                # Process each track with its features
-                                for track, feature in zip(batch_tracks, features):
-                                    if feature:
-                                        tracks.append(Track(
-                                            id=track['id'],
-                                            title=track['name'],
-                                            artist=track['artists'][0]['name'],
-                                            bpm=feature['tempo'],
-                                            key=self._convert_key(feature['key'], feature['mode']),
-                                            camelot_position=self._get_camelot_position(
-                                                feature['key'], feature['mode']
-                                            ),
-                                            energy_level=feature['energy'],
-                                            spotify_url=f"https://open.spotify.com/track/{track['id']}"
-                                        ))
-                                        print(f"Successfully imported: {track['name']}")
-                            except Exception as e:
-                                print(f"Error processing batch: {str(e)}")
-                                continue
+                        # Process each track with its features
+                        for track, feature in zip(batch_tracks, features):
+                            if feature:
+                                tracks.append(Track(
+                                    id=track['id'],
+                                    title=track['name'],
+                                    artist=track['artists'][0]['name'],
+                                    bpm=feature['tempo'],
+                                    key=self._convert_key(feature['key'], feature['mode']),
+                                    camelot_position=self._get_camelot_position(
+                                        feature['key'], feature['mode']
+                                    ),
+                                    energy_level=feature['energy'],
+                                    spotify_url=f"https://open.spotify.com/track/{track['id']}"
+                                ))
+                                print(f"Successfully imported: {track['name']}")
                     
                     offset += limit
                     
@@ -271,8 +302,8 @@ class SpotifyService:
                                       f"Processed {len(tracks)} tracks so far...")
                     
                 except Exception as e:
-                    print(f"Error fetching playlist tracks: {str(e)}")
-                    break
+                    print(f"Error in batch processing: {str(e)}")
+                    continue
             
             if not tracks:
                 raise Exception(
