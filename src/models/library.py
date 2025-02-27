@@ -14,6 +14,7 @@ class Track:
     album: str = None
     time_signature: str = "4/4"  # Default to common time
     album_art_url: str = None  # Add this field
+    genres: List[str] = None  # Add genres field
 
 class MusicLibrary:
     def __init__(self):

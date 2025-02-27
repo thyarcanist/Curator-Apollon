@@ -19,6 +19,14 @@ class MainWindow:
                  spotify_service: SpotifyService,
                  analysis_service: AnalysisService):
         self.root = root
+        
+        # Make window scale with screen
+        self.root.state('zoomed')  # Windows fullscreen
+        
+        # Configure grid weights for proper scaling
+        self.root.grid_rowconfigure(0, weight=1)
+        self.root.grid_columnconfigure(0, weight=1)
+        
         self.library = library
         self.spotify_service = spotify_service
         self.analysis_service = analysis_service
@@ -137,11 +145,18 @@ class MainWindow:
         self._setup_discovery_view()
     
     def _setup_library_view(self):
+        """Setup the library view with consistent grid geometry management"""
+        # Make library view scale
+        self.library_frame.grid_rowconfigure(0, weight=1)
+        self.library_frame.grid_columnconfigure(0, weight=1)
+        
         # Track list with modern styling
-        self.track_list = ttk.Treeview(self.library_frame, 
-                                      columns=('Title', 'Artist', 'BPM', 'Key'),
-                                      show='headings',
-                                      bootstyle="dark")
+        self.track_list = ttk.Treeview(
+            self.library_frame, 
+            columns=('Title', 'Artist', 'BPM', 'Key'),
+            show='headings',
+            bootstyle="dark"
+        )
         
         # Configure columns
         for col in ('Title', 'Artist', 'BPM', 'Key'):
@@ -149,31 +164,52 @@ class MainWindow:
             self.track_list.column(col, minwidth=100)
         
         # Add scrollbar
-        scrollbar = ttk.Scrollbar(self.library_frame, 
-                                orient="vertical", 
-                                command=self.track_list.yview)
+        scrollbar = ttk.Scrollbar(
+            self.library_frame, 
+            orient="vertical", 
+            command=self.track_list.yview
+        )
         self.track_list.configure(yscrollcommand=scrollbar.set)
         
-        # Pack with modern spacing
-        self.track_list.pack(expand=True, fill='both', padx=10, pady=5, side='left')
-        scrollbar.pack(fill='y', pady=5, side='right')
+        # Grid layout for track list and scrollbar
+        self.track_list.grid(row=0, column=0, sticky='nsew', padx=10, pady=5)
+        scrollbar.grid(row=0, column=1, sticky='ns', pady=5)
         
-        # Control buttons in a modern layout
+        # Control buttons frame
         controls = ttk.Frame(self.library_frame)
-        controls.pack(fill='x', pady=10, padx=10)
+        controls.grid(row=1, column=0, columnspan=2, sticky='ew', padx=10, pady=10)
         
-        ttk.Button(controls, text='Add Track', 
-                  bootstyle="primary",
-                  command=self._add_track_dialog).pack(side='left', padx=5)
-        ttk.Button(controls, text='Import Playlist', 
-                  bootstyle="primary",
-                  command=self._import_playlist_dialog).pack(side='left', padx=5)
-        ttk.Button(controls, text='Remove Selected', 
-                  bootstyle="danger",
-                  command=self._remove_selected).pack(side='left', padx=5)
-        ttk.Button(controls, text='Remove All', 
-                  bootstyle="danger",
-                  command=self._remove_all).pack(side='left', padx=5)
+        # Configure the controls frame columns
+        controls.columnconfigure(tuple(range(6)), weight=1)  # Equal width for 6 columns
+        
+        # Add buttons with grid
+        ttk.Button(
+            controls, 
+            text='Add Track',
+            bootstyle="primary",
+            command=self._add_track_dialog
+        ).grid(row=0, column=0, padx=5)
+        
+        ttk.Button(
+            controls, 
+            text='Import Playlist',
+            bootstyle="primary",
+            command=self._import_playlist_dialog
+        ).grid(row=0, column=1, padx=5)
+        
+        ttk.Button(
+            controls, 
+            text='Remove Selected',
+            bootstyle="danger",
+            command=self._remove_selected
+        ).grid(row=0, column=2, padx=5)
+        
+        ttk.Button(
+            controls, 
+            text='Remove All',
+            bootstyle="danger",
+            command=self._remove_all
+        ).grid(row=0, column=3, padx=5)
         
         # Export button
         self.export_button = ttk.Button(
@@ -182,7 +218,7 @@ class MainWindow:
             command=self.export_playlist,
             bootstyle="secondary"
         )
-        self.export_button.pack(side="left", padx=5)
+        self.export_button.grid(row=0, column=4, padx=5)
         
         # Add track selection binding
         self.track_list.bind('<<TreeviewSelect>>', self._on_track_select)
@@ -194,9 +230,12 @@ class MainWindow:
         
         content = self.analysis_scroll.container
         
-        # Current Track Analysis Section
+        # Use grid for better control
+        content.grid_columnconfigure(0, weight=1)
+        
+        # Current Track Analysis
         self.current_track_frame = ttk.LabelFrame(content, text='Current Track Analysis')
-        self.current_track_frame.pack(fill='x', padx=10, pady=5)
+        self.current_track_frame.grid(row=0, column=0, sticky='ew', padx=20, pady=10)
         
         # Album art frame
         self.album_art_frame = ttk.Frame(self.current_track_frame)
@@ -248,13 +287,13 @@ class MainWindow:
         )
         self.next_button.pack(side='right', padx=5)
         
-        # Playlist Analysis Section (with larger font and padding)
+        # Playlist Analysis with better spacing
         playlist_stats = ttk.LabelFrame(
             content, 
             text='Playlist Analysis',
             style='Bold.TLabelframe'
         )
-        playlist_stats.pack(fill='x', padx=10, pady=15)  # Added more padding
+        playlist_stats.grid(row=1, column=0, sticky='ew', padx=20, pady=10)
         
         # Musical Statistics Section
         musical_stats = ttk.LabelFrame(
@@ -262,27 +301,29 @@ class MainWindow:
             text='Musical Statistics',
             style='Bold.TLabelframe'
         )
-        musical_stats.pack(fill='x', padx=10, pady=10)
+        musical_stats.pack(fill='x', padx=20, pady=10)
         
         musical_labels = [
             ('Average BPM:', 'N/A'),
             ('BPM Range:', 'N/A'),
-            ('Tracks with BPM:', 'N/A'),
             ('Common Keys:', 'N/A'),
-            ('Tracks with Key:', 'N/A'),
             ('Average Energy:', 'N/A'),
-            ('Tracks with Energy:', 'N/A'),
             ('Common Camelot:', 'N/A'),
-            ('Tracks with Camelot:', 'N/A'),
             ('Time Signatures:', 'N/A'),
-            ('Tracks with Time Sig:', 'N/A')
+            ('Common Genres:', 'N/A'),
+            ('Total Genres:', 'N/A')
         ]
         
         self.musical_values = {}
         for label, default in musical_labels:
-            ttk.Label(musical_stats, text=label).pack(anchor='w', padx=10, pady=2)
-            value_label = ttk.Label(musical_stats, text=default)
-            value_label.pack(anchor='w', padx=20, pady=2)
+            # Create a frame for each stat to keep label and value on same line
+            stat_frame = ttk.Frame(musical_stats)
+            stat_frame.pack(fill='x', padx=10, pady=2)
+            
+            # Label and value on same line
+            ttk.Label(stat_frame, text=label).pack(side='left')
+            value_label = ttk.Label(stat_frame, text=default)
+            value_label.pack(side='left', padx=(5, 0))  # Small padding between label and value
             self.musical_values[label] = value_label
         
         # Literary Statistics Section (with padding)
@@ -295,6 +336,7 @@ class MainWindow:
         
         literary_labels = [
             ('Most Common Artist:', 'N/A'),
+            ('Least Common Artist:', 'N/A'),
             ('Most Used Word (count):', 'N/A'),
             ('Least Used Word (count):', 'N/A'),
             ('Top Characters:', 'N/A'),
@@ -620,8 +662,13 @@ class MainWindow:
         
         if artist_counts:
             most_common_artist = max(artist_counts.items(), key=lambda x: x[1])
+            least_common_artist = min(artist_counts.items(), key=lambda x: x[1])
+            
             self.literary_values['Most Common Artist:'].config(
                 text=f"{most_common_artist[0]} ({most_common_artist[1]} tracks)"
+            )
+            self.literary_values['Least Common Artist:'].config(
+                text=f"{least_common_artist[0]} ({least_common_artist[1]} tracks)"
             )
             self.literary_values['Unique Artists:'].config(text=str(len(set(artists))))
         
@@ -765,34 +812,20 @@ class MainWindow:
         
         # Time Signature Analysis
         time_sigs = {}
-        common_time = 0  # 4/4
-        odd_time = 0     # anything not 4/4
-        
         for track in tracks:
             sig = track.time_signature
-            time_sigs[sig] = time_sigs.get(sig, 0) + 1
-            
-            if sig == "4/4":
-                common_time += 1
-            else:
-                odd_time += 1
+            if sig != "Unknown":
+                time_sigs[sig] = time_sigs.get(sig, 0) + 1
         
-        # Format time signature distribution
         if time_sigs:
             sig_display = []
             for sig, count in sorted(time_sigs.items(), key=lambda x: x[1], reverse=True):
                 percentage = (count / len(tracks)) * 100
                 sig_display.append(f"{sig}({count}, {percentage:.1f}%)")
             
-            self.musical_values['Time Signatures:'].config(
-                text=f"{', '.join(sig_display)}"
-            )
-            self.musical_values['Tracks with Time Sig:'].config(
-                text=f"{sum(time_sigs.values())}/{len(tracks)} ({(sum(time_sigs.values())/len(tracks))*100:.1f}%)"
-            )
+            self.musical_values['Time Signatures:'].config(text=", ".join(sig_display))
         else:
             self.musical_values['Time Signatures:'].config(text="N/A")
-            self.musical_values['Tracks with Time Sig:'].config(text="0/0 (0%)") 
 
     def _reset_stats(self):
         """Reset all statistics to default values"""
@@ -941,90 +974,262 @@ class MainWindow:
             self.set_status("Error updating analysis")
 
     def _update_musical_analysis(self, tracks: List[Track]):
-        """Update musical analysis with handling for missing features"""
+        """Update musical analysis with essential stats"""
         if not tracks:
             return
             
         # BPM Analysis
-        valid_bpms = [t.bpm for t in tracks if t.bpm and t.bpm > 0]
-        if valid_bpms:
-            avg_bpm = sum(valid_bpms) / len(valid_bpms)
-            min_bpm = min(valid_bpms)
-            max_bpm = max(valid_bpms)
+        bpms = [t.bpm for t in tracks if t.bpm and t.bpm > 0]
+        if bpms:
+            avg_bpm = sum(bpms) / len(bpms)
+            min_bpm = min(bpms)
+            max_bpm = max(bpms)
             
             self.musical_values['Average BPM:'].config(text=f"{avg_bpm:.1f}")
             self.musical_values['BPM Range:'].config(text=f"{min_bpm:.1f} - {max_bpm:.1f}")
-            self.musical_values['Tracks with BPM:'].config(
-                text=f"{len(valid_bpms)}/{len(tracks)} ({(len(valid_bpms)/len(tracks))*100:.1f}%)"
-            )
         else:
             self.musical_values['Average BPM:'].config(text="N/A")
             self.musical_values['BPM Range:'].config(text="N/A")
-            self.musical_values['Tracks with BPM:'].config(text="0/0 (0%)")
         
         # Key Analysis
-        valid_keys = [t.key for t in tracks if t.key and t.key != "Unknown"]
-        if valid_keys:
+        keys = [t.key for t in tracks if t.key and t.key != "Unknown"]
+        if keys:
             key_counts = {}
-            for key in valid_keys:
+            for key in keys:
                 key_counts[key] = key_counts.get(key, 0) + 1
-            
-            # Most common keys
             common_keys = sorted(key_counts.items(), key=lambda x: x[1], reverse=True)[:3]
             key_display = ", ".join(f"{k}({v})" for k, v in common_keys)
-            
             self.musical_values['Common Keys:'].config(text=key_display)
-            self.musical_values['Tracks with Key:'].config(
-                text=f"{len(valid_keys)}/{len(tracks)} ({(len(valid_keys)/len(tracks))*100:.1f}%)"
-            )
         else:
             self.musical_values['Common Keys:'].config(text="N/A")
-            self.musical_values['Tracks with Key:'].config(text="0/0 (0%)")
         
         # Energy Analysis
-        valid_energy = [t.energy_level for t in tracks if t.energy_level is not None and t.energy_level > 0]
-        if valid_energy:
-            avg_energy = sum(valid_energy) / len(valid_energy)
+        energies = [t.energy_level for t in tracks if t.energy_level is not None and t.energy_level > 0]
+        if energies:
+            avg_energy = sum(energies) / len(energies)
             self.musical_values['Average Energy:'].config(text=f"{avg_energy:.2f}")
-            self.musical_values['Tracks with Energy:'].config(
-                text=f"{len(valid_energy)}/{len(tracks)} ({(len(valid_energy)/len(tracks))*100:.1f}%)"
-            )
         else:
             self.musical_values['Average Energy:'].config(text="N/A")
-            self.musical_values['Tracks with Energy:'].config(text="0/0 (0%)")
         
         # Camelot Analysis
-        valid_camelot = [t.camelot_position for t in tracks if t.camelot_position and t.camelot_position != "Unknown"]
-        if valid_camelot:
+        camelot = [t.camelot_position for t in tracks if t.camelot_position and t.camelot_position != "Unknown"]
+        if camelot:
             camelot_counts = {}
-            for pos in valid_camelot:
+            for pos in camelot:
                 camelot_counts[pos] = camelot_counts.get(pos, 0) + 1
-            
-            # Most common positions
             common_pos = sorted(camelot_counts.items(), key=lambda x: x[1], reverse=True)[:3]
             pos_display = ", ".join(f"{p}({v})" for p, v in common_pos)
-            
             self.musical_values['Common Camelot:'].config(text=pos_display)
-            self.musical_values['Tracks with Camelot:'].config(
-                text=f"{len(valid_camelot)}/{len(tracks)} ({(len(valid_camelot)/len(tracks))*100:.1f}%)"
-            )
         else:
             self.musical_values['Common Camelot:'].config(text="N/A")
-            self.musical_values['Tracks with Camelot:'].config(text="0/0 (0%)")
         
         # Time Signature Analysis
         time_sigs = {}
-        common_time = 0
-        odd_time = 0
-        
         for track in tracks:
             sig = track.time_signature
             if sig != "Unknown":
                 time_sigs[sig] = time_sigs.get(sig, 0) + 1
-                if sig == "4/4":
-                    common_time += 1
-                else:
-                    odd_time += 1
+        
+        if time_sigs:
+            sig_display = []
+            for sig, count in sorted(time_sigs.items(), key=lambda x: x[1], reverse=True):
+                percentage = (count / len(tracks)) * 100
+                sig_display.append(f"{sig}({count}, {percentage:.1f}%)")
+            self.musical_values['Time Signatures:'].config(text=", ".join(sig_display))
+        else:
+            self.musical_values['Time Signatures:'].config(text="N/A")
+
+        # Genre Analysis
+        all_genres = []
+        for track in tracks:
+            if track.genres:
+                all_genres.extend(track.genres)
+        
+        if all_genres:
+            genre_counts = {}
+            for genre in all_genres:
+                genre_counts[genre] = genre_counts.get(genre, 0) + 1
+            
+            # Most common genres
+            common_genres = sorted(genre_counts.items(), key=lambda x: x[1], reverse=True)[:3]
+            genre_display = ", ".join(f"{g}({c})" for g, c in common_genres)
+            
+            self.musical_values['Common Genres:'].config(text=genre_display)
+            self.musical_values['Total Genres:'].config(text=str(len(set(all_genres))))
+        else:
+            self.musical_values['Common Genres:'].config(text="N/A")
+            self.musical_values['Total Genres:'].config(text="N/A")
+
+    def _update_literary_analysis(self, tracks: List[Track]):
+        """Update literary analysis with handling for missing features"""
+        if not tracks:
+            return
+            
+        # Literary Analysis
+        artists = [t.artist for t in tracks]
+        titles = [t.title for t in tracks]
+        
+        # Artist Analysis
+        artist_counts = {}
+        for artist in artists:
+            artist_counts[artist] = artist_counts.get(artist, 0) + 1
+        
+        if artist_counts:
+            most_common_artist = max(artist_counts.items(), key=lambda x: x[1])
+            least_common_artist = min(artist_counts.items(), key=lambda x: x[1])
+            
+            self.literary_values['Most Common Artist:'].config(
+                text=f"{most_common_artist[0]} ({most_common_artist[1]} tracks)"
+            )
+            self.literary_values['Least Common Artist:'].config(
+                text=f"{least_common_artist[0]} ({least_common_artist[1]} tracks)"
+            )
+            self.literary_values['Unique Artists:'].config(text=str(len(set(artists))))
+        
+        # Character Analysis
+        all_chars = ''.join(titles).lower()
+        char_counts = {}
+        special_chars = set()
+        numbers = set()
+        
+        for char in all_chars:
+            if char.isalnum():
+                char_counts[char] = char_counts.get(char, 0) + 1
+                if char.isnumeric():
+                    numbers.add(char)
+            elif not char.isspace():
+                special_chars.add(char)
+        
+        # Sort characters by frequency
+        top_chars = sorted(
+            [(k, v) for k, v in char_counts.items() if k.isalpha()],
+            key=lambda x: x[1],
+            reverse=True
+        )[:8]  # Top 8 characters
+        
+        self.literary_values['Top Characters:'].config(
+            text=f"[{', '.join(f'{c[0]}({c[1]})' for c in top_chars)}]"
+        )
+        
+        if special_chars:
+            self.literary_values['Special Characters:'].config(
+                text=f"[{', '.join(sorted(special_chars))}]"
+            )
+        
+        if numbers:
+            self.literary_values['Numbers Used:'].config(
+                text=f"[{', '.join(sorted(numbers))}]"
+            )
+        
+        # Enhanced Word Analysis
+        words = []
+        word_in_tracks = {}  # Count how many tracks contain each word
+        
+        # Words/symbols to ignore unless part of a known band/title
+        ignore_words = {'the', 'a', 'an', 'and', 'or', 'but', 'nor', 'for', 'yet', 'so'}
+        ignore_chars = {'-', '&', '+', 'x', 'vs', 'feat.', 'ft.', 'prod.'}
+        
+        # Known special cases (band names, common title patterns that should be preserved)
+        special_cases = {
+            'a$ap': 'asap',  # A$AP Rocky
+            't-ara': 't-ara',  # T-ara
+            'g-dragon': 'g-dragon',  # G-Dragon
+            'x-japan': 'x-japan',  # X Japan
+            'crosses': '†††',  # Crosses (†††)
+            'day6': 'day6',  # DAY6
+            'txt': 'txt',  # TXT (Tomorrow X Together)
+        }
+        
+        def clean_word(word: str) -> str:
+            """Clean a word while preserving special cases"""
+            word = word.lower()
+            
+            # Check for special cases first
+            for case, preserve in special_cases.items():
+                if case in word:
+                    return preserve
+            
+            # Remove common symbols if not part of special cases
+            if word not in ignore_chars:
+                for char in '()[]{}!?.,;:\'\"':
+                    word = word.replace(char, '')
+                
+                # Remove standalone symbols
+                if word in ignore_chars:
+                    return ''
+                
+                # Remove common words unless they're part of a longer phrase
+                if word in ignore_words and len(word) <= 3:
+                    return ''
+            
+            return word
+        
+        for track in tracks:
+            # Split on spaces and clean each word
+            title_words = [clean_word(w) for w in track.title.split()]
+            # Filter out empty strings and single characters
+            title_words = [w for w in title_words if w and len(w) > 1]
+            
+            # Add to global word list
+            words.extend(title_words)
+            
+            # Count unique words per track
+            seen_words = set(title_words)
+            for word in seen_words:
+                word_in_tracks[word] = word_in_tracks.get(word, 0) + 1
+        
+        if words:
+            # Filter out very common words for the "most used" statistic
+            filtered_words = {k: v for k, v in word_in_tracks.items() 
+                            if k not in ignore_words and len(k) > 1}
+            
+            if filtered_words:
+                most_used = max(filtered_words.items(), key=lambda x: x[1])
+                least_used = min(filtered_words.items(), key=lambda x: x[1])
+                
+                self.literary_values['Most Used Word (count):'].config(
+                    text=f"{most_used[0]} (in {most_used[1]} tracks)"
+                )
+                self.literary_values['Least Used Word (count):'].config(
+                    text=f"{least_used[0]} (in {least_used[1]} tracks)"
+                )
+                
+                # Find meaningful repeated words
+                repeated = [word for word, count in filtered_words.items() 
+                          if count > 1 and word not in ignore_chars]
+                if repeated:
+                    self.literary_values['Repeated Words:'].config(
+                        text=f"{', '.join(sorted(repeated)[:5])}..."
+                    )
+            
+            # Analyze title patterns
+            patterns = []
+            if any('feat.' in t.lower() for t in titles):
+                patterns.append('feat.')
+            if any('remix' in t.lower() for t in titles):
+                patterns.append('remix')
+            if any('ft.' in t.lower() for t in titles):
+                patterns.append('ft.')
+            if any('prod.' in t.lower() for t in titles):
+                patterns.append('prod.')
+            
+            if patterns:
+                self.literary_values['Title Pattern:'].config(
+                    text=f"Common: {', '.join(patterns)}"
+                )
+            
+            # Average title length
+            avg_length = sum(len(title) for title in titles) / len(titles)
+            self.literary_values['Average Title Length:'].config(
+                text=f"{avg_length:.1f} chars"
+            )
+        
+        # Time Signature Analysis
+        time_sigs = {}
+        for track in tracks:
+            sig = track.time_signature
+            if sig != "Unknown":
+                time_sigs[sig] = time_sigs.get(sig, 0) + 1
         
         if time_sigs:
             sig_display = []
@@ -1033,10 +1238,5 @@ class MainWindow:
                 sig_display.append(f"{sig}({count}, {percentage:.1f}%)")
             
             self.musical_values['Time Signatures:'].config(text=", ".join(sig_display))
-            total_analyzed = sum(time_sigs.values())
-            self.musical_values['Tracks with Time Sig:'].config(
-                text=f"{total_analyzed}/{len(tracks)} ({(total_analyzed/len(tracks))*100:.1f}%)"
-            )
         else:
-            self.musical_values['Time Signatures:'].config(text="N/A")
-            self.musical_values['Tracks with Time Sig:'].config(text="0/0 (0%)") 
+            self.musical_values['Time Signatures:'].config(text="N/A") 

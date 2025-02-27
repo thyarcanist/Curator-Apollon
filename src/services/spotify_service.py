@@ -345,7 +345,10 @@ class SpotifyService:
                         
                     track = item['track']
                     try:
-                        # Always create track with mandatory info
+                        # Get artist genres
+                        artist_info = self.sp.artist(track['artists'][0]['id'])
+                        genres = artist_info['genres'] if artist_info else []
+                        
                         track_obj = Track(
                             id=track['id'],
                             title=track['name'],
@@ -358,7 +361,8 @@ class SpotifyService:
                             key="Unknown",
                             camelot_position="Unknown",
                             energy_level=0.0,
-                            time_signature="4/4"  # Default to common time
+                            time_signature="4/4",  # Default to common time
+                            genres=genres
                         )
                         
                         # Try to get audio features, but continue if they fail
