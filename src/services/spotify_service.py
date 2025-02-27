@@ -1,5 +1,5 @@
 import spotipy
-from spotipy.oauth2 import SpotifyOAuth
+from spotipy.oauth2 import SpotifyOAuth, SpotifyClientCredentials
 from models.library import Track
 import re
 import os
@@ -11,6 +11,8 @@ import socketserver
 import threading
 from urllib.parse import urlparse, parse_qs
 from queue import Queue
+import requests
+import base64
 
 class CallbackHandler(http.server.SimpleHTTPRequestHandler):
     def __init__(self, *args, auth_queue=None, **kwargs):
@@ -95,8 +97,10 @@ class CallbackHandler(http.server.SimpleHTTPRequestHandler):
 
 class SpotifyService:
     def __init__(self):
+        self.client_id = "55c875d209d94fdf963a31243f5d6fdb"
+        self.client_secret = "cf4f384ddf3c46c49e8ca8d15d3b71ba"
+        self.token = None
         self.sp = None
-        self.auth_manager = None
         self._setup_cache()
         self.server = None
         self.server_thread = None
@@ -134,60 +138,41 @@ class SpotifyService:
             self.server = None
             self.server_thread = None
 
+    def _get_token(self):
+        """Get access token using client credentials flow"""
+        auth_string = f"{self.client_id}:{self.client_secret}"
+        auth_bytes = auth_string.encode('utf-8')
+        auth_base64 = str(base64.b64encode(auth_bytes), 'utf-8')
+        
+        url = "https://accounts.spotify.com/api/token"
+        headers = {
+            "Authorization": f"Basic {auth_base64}",
+            "Content-Type": "application/x-www-form-urlencoded"
+        }
+        data = {"grant_type": "client_credentials"}
+        
+        try:
+            result = requests.post(url, headers=headers, data=data)
+            result.raise_for_status()
+            json_result = result.json()
+            self.token = json_result["access_token"]
+            return self.token
+        except Exception as e:
+            raise Exception(f"Failed to get access token: {str(e)}")
+
     def ensure_authenticated(self):
+        """Ensure we have a valid client credentials token"""
         if self.sp is None:
             try:
-                port, auth_queue = self._start_auth_server()
-                
-                # Define scopes as a single space-separated string
-                SCOPES = "playlist-read-private playlist-read-collaborative playlist-read-public user-library-read user-read-private user-read-email"
-                
-                self.auth_manager = SpotifyOAuth(
-                    client_id="55c875d209d94fdf963a31243f5d6fdb",
-                    client_secret="cf4f384ddf3c46c49e8ca8d15d3b71ba",
-                    redirect_uri="https://apollon.occybyte.com/callback",
-                    scope=SCOPES,  # Use the single string instead of join
-                    cache_path=str(self.cache_path),
-                    open_browser=True
+                # Use client credentials flow
+                auth_manager = SpotifyClientCredentials(
+                    client_id=self.client_id,
+                    client_secret=self.client_secret
                 )
-                
-                auth_url = self.auth_manager.get_authorize_url()
-                webbrowser.open(auth_url)
-                
-                try:
-                    # Show instructions to user
-                    messagebox.showinfo(
-                        message="After authorizing in your browser:\n\n"
-                               "1. Copy the FULL URL from your browser\n"
-                               "2. Paste it in the next dialog",
-                        title="Spotify Authentication"
-                    )
-                    
-                    # Get the full URL from user
-                    response = simpledialog.askstring(
-                        "Spotify Authentication",
-                        "Please paste the FULL URL from your browser:",
-                        initialvalue="https://apollon.occybyte.com/callback?code="
-                    )
-                    
-                    if response:
-                        # Extract code from URL
-                        code = self.auth_manager.parse_response_code(response)
-                        # Get token with code
-                        self.auth_manager.get_access_token(code)
-                        # Create Spotify client
-                        self.sp = spotipy.Spotify(auth_manager=self.auth_manager)
-                        # Test connection
-                        self.sp.current_user()
-                    else:
-                        raise Exception("Authentication cancelled")
-                    
-                finally:
-                    self._stop_auth_server()
-                
+                self.sp = spotipy.Spotify(auth_manager=auth_manager)
+                # Test the connection
+                self.sp.playlist("37i9dQZEVXbMDoHDwVN2tF")  # Test with a public playlist
             except Exception as e:
-                if self.cache_path.exists():
-                    self.cache_path.unlink()
                 raise Exception(f"Authentication failed: {str(e)}")
     
     def get_track_info(self, spotify_url: str) -> Track:
@@ -225,91 +210,49 @@ class SpotifyService:
             if not playlist_id:
                 raise ValueError("Invalid Spotify playlist URL format")
             
-            # Get playlist details with more fields
-            try:
-                playlist = self.sp.playlist(playlist_id, 
-                    fields="name,tracks.total,owner.display_name,public")
-                if not playlist:
-                    raise ValueError("Could not find playlist")
-                    
-                print(f"Playlist details: {playlist}")  # Debug info
-                
-            except Exception as e:
-                raise ValueError(f"Could not access playlist: {str(e)}")
+            # Get playlist details
+            playlist = self.sp.playlist(playlist_id)
+            if not playlist:
+                raise ValueError("Could not find playlist")
             
-            messagebox.showinfo("Import Status", 
-                              f"Found playlist: {playlist['name']}\n"
-                              f"Owner: {playlist['owner']['display_name']}\n"
-                              f"Public: {playlist.get('public', False)}\n"
-                              f"Total tracks: {playlist['tracks']['total']}")
+            print(f"Accessing playlist: {playlist['name']}")
             
             tracks = []
-            offset = 0
-            limit = 50  # Increased batch size
+            batch_size = 50
+            items = playlist['tracks']['items']
             
-            while True:
-                try:
-                    results = self.sp.playlist_tracks(
-                        playlist_id,
-                        offset=offset,
-                        limit=limit,
-                        fields="items(track(id,name,artists,is_local)),next,total"
-                    )
+            for i in range(0, len(items), batch_size):
+                batch = items[i:i+batch_size]
+                track_ids = []
+                track_info = []
+                
+                for item in batch:
+                    if item['track'] and not item['track'].get('is_local', False):
+                        track_ids.append(item['track']['id'])
+                        track_info.append(item['track'])
+                
+                if track_ids:
+                    features = self.sp.audio_features(track_ids)
                     
-                    if not results or not results['items']:
-                        break
-                    
-                    batch_ids = []
-                    batch_tracks = []
-                    
-                    # Collect all valid tracks from this batch
-                    for item in results['items']:
-                        if (item['track'] and 
-                            not item['track'].get('is_local', False) and 
-                            item['track'].get('id')):
-                            batch_ids.append(item['track']['id'])
-                            batch_tracks.append(item['track'])
-                    
-                    if batch_ids:
-                        # Get audio features for the entire batch
-                        features = self.sp.audio_features(batch_ids)
-                        
-                        # Process each track with its features
-                        for track, feature in zip(batch_tracks, features):
-                            if feature:
-                                tracks.append(Track(
-                                    id=track['id'],
-                                    title=track['name'],
-                                    artist=track['artists'][0]['name'],
-                                    bpm=feature['tempo'],
-                                    key=self._convert_key(feature['key'], feature['mode']),
-                                    camelot_position=self._get_camelot_position(
-                                        feature['key'], feature['mode']
-                                    ),
-                                    energy_level=feature['energy'],
-                                    spotify_url=f"https://open.spotify.com/track/{track['id']}"
-                                ))
-                                print(f"Successfully imported: {track['name']}")
-                    
-                    offset += limit
-                    
-                    # Show progress
-                    messagebox.showinfo("Import Progress", 
-                                      f"Processed {len(tracks)} tracks so far...")
-                    
-                except Exception as e:
-                    print(f"Error in batch processing: {str(e)}")
-                    continue
+                    for track, feature in zip(track_info, features):
+                        if feature:
+                            tracks.append(Track(
+                                id=track['id'],
+                                title=track['name'],
+                                artist=track['artists'][0]['name'],
+                                bpm=feature['tempo'],
+                                key=self._convert_key(feature['key'], feature['mode']),
+                                camelot_position=self._get_camelot_position(
+                                    feature['key'], feature['mode']
+                                ),
+                                energy_level=feature['energy'],
+                                spotify_url=f"https://open.spotify.com/track/{track['id']}"
+                            ))
+                            print(f"Imported: {track['name']}")
             
             if not tracks:
-                raise Exception(
-                    "No tracks could be imported. This could be because:\n"
-                    "1. The playlist is private\n"
-                    "2. You don't have access to the playlist\n"
-                    "3. The tracks are not available in your region\n"
-                    "Please check the playlist URL and permissions."
-                )
-            
+                raise Exception("No tracks could be imported")
+                
             return tracks
             
         except Exception as e:
