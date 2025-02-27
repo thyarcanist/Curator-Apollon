@@ -188,7 +188,10 @@ class MainWindow:
             ('Max BPM:', '0'),
             ('Min BPM:', '0'),
             ('Most Common Key:', 'N/A'),
-            ('Key Distribution:', 'N/A')
+            ('Key Distribution:', 'N/A'),
+            ('Time Signatures:', 'N/A'),
+            ('Common Time Songs:', '0'),
+            ('Odd Time Songs:', '0')
         ]
         
         self.musical_values = {}
@@ -663,6 +666,37 @@ class MainWindow:
             avg_length = sum(len(title) for title in titles) / len(titles)
             self.literary_values['Average Title Length:'].config(
                 text=f"{avg_length:.1f} chars"
+            )
+        
+        # Time Signature Analysis
+        time_sigs = {}
+        common_time = 0  # 4/4
+        odd_time = 0     # anything not 4/4
+        
+        for track in tracks:
+            sig = track.time_signature
+            time_sigs[sig] = time_sigs.get(sig, 0) + 1
+            
+            if sig == "4/4":
+                common_time += 1
+            else:
+                odd_time += 1
+        
+        # Format time signature distribution
+        if time_sigs:
+            sig_display = []
+            for sig, count in sorted(time_sigs.items(), key=lambda x: x[1], reverse=True):
+                percentage = (count / len(tracks)) * 100
+                sig_display.append(f"{sig}({count}, {percentage:.1f}%)")
+            
+            self.musical_values['Time Signatures:'].config(
+                text=f"{', '.join(sig_display)}"
+            )
+            self.musical_values['Common Time Songs:'].config(
+                text=f"{common_time} ({(common_time/len(tracks))*100:.1f}%)"
+            )
+            self.musical_values['Odd Time Songs:'].config(
+                text=f"{odd_time} ({(odd_time/len(tracks))*100:.1f}%)"
             )
         
         self.set_status("Statistics updated")

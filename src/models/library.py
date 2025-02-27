@@ -12,6 +12,7 @@ class Track:
     energy_level: float
     spotify_url: str = None
     album: str = None
+    time_signature: str = "4/4"  # Default to common time
 
 class MusicLibrary:
     def __init__(self):
