@@ -96,6 +96,23 @@ class MainWindow:
         )
         self.status_bar.pack(side="bottom", fill="x")
         
+        # Add bold labelframe style
+        self.style.configure(
+            "Bold.TLabelframe.Label",
+            font=('CommitMono', 12, 'bold'),
+            foreground=COLORS['gold']
+        )
+        
+        self.style.configure(
+            "Bold.TLabelframe",
+            borderwidth=2,
+            relief="solid"
+        )
+
+        # Configure dialog geometry
+        self.root.option_add('*Dialog.geometry', 'center')  # Center dialogs
+        self.root.option_add('*Dialog.minsize', '300x100')  # Minimum size
+        
         self._setup_ui()
         self.library.add_observer(self)
         
@@ -172,7 +189,6 @@ class MainWindow:
     
     def _setup_analysis_view(self):
         """Setup the analysis view with playlist and track statistics"""
-        # Create scrollable frame for all content
         self.analysis_scroll = ScrolledFrame(self.analysis_frame)
         self.analysis_scroll.pack(expand=True, fill='both', padx=5, pady=5)
         
@@ -181,26 +197,6 @@ class MainWindow:
         # Current Track Analysis Section
         self.current_track_frame = ttk.LabelFrame(content, text='Current Track Analysis')
         self.current_track_frame.pack(fill='x', padx=10, pady=5)
-        
-        # Navigation buttons at the top
-        nav_frame = ttk.Frame(self.current_track_frame)
-        nav_frame.pack(fill='x', padx=10, pady=5)
-        
-        self.prev_button = ttk.Button(
-            nav_frame,
-            text="← Previous",
-            command=self._show_previous_track,
-            bootstyle="secondary"
-        )
-        self.prev_button.pack(side='left', padx=5)
-        
-        self.next_button = ttk.Button(
-            nav_frame,
-            text="Next →",
-            command=self._show_next_track,
-            bootstyle="secondary"
-        )
-        self.next_button.pack(side='right', padx=5)
         
         # Album art frame
         self.album_art_frame = ttk.Frame(self.current_track_frame)
@@ -232,13 +228,41 @@ class MainWindow:
             value_label.grid(row=i, column=1, sticky='w', padx=5, pady=2)
             self.track_values[label] = value_label
         
-        # Playlist Analysis Section
-        playlist_stats = ttk.LabelFrame(content, text='Playlist Analysis')
-        playlist_stats.pack(fill='x', padx=10, pady=5)
+        # Navigation buttons at the bottom
+        nav_frame = ttk.Frame(self.current_track_frame)
+        nav_frame.pack(fill='x', padx=10, pady=(10, 5))
+        
+        self.prev_button = ttk.Button(
+            nav_frame,
+            text="← Previous",
+            command=self._show_previous_track,
+            bootstyle="secondary"
+        )
+        self.prev_button.pack(side='left', padx=5)
+        
+        self.next_button = ttk.Button(
+            nav_frame,
+            text="Next →",
+            command=self._show_next_track,
+            bootstyle="secondary"
+        )
+        self.next_button.pack(side='right', padx=5)
+        
+        # Playlist Analysis Section (with larger font and padding)
+        playlist_stats = ttk.LabelFrame(
+            content, 
+            text='Playlist Analysis',
+            style='Bold.TLabelframe'
+        )
+        playlist_stats.pack(fill='x', padx=10, pady=15)  # Added more padding
         
         # Musical Statistics Section
-        musical_stats = ttk.LabelFrame(playlist_stats, text='Musical Statistics')
-        musical_stats.pack(fill='x', padx=10, pady=5)
+        musical_stats = ttk.LabelFrame(
+            playlist_stats, 
+            text='Musical Statistics',
+            style='Bold.TLabelframe'
+        )
+        musical_stats.pack(fill='x', padx=10, pady=10)
         
         musical_labels = [
             ('Average BPM:', '0'),
@@ -259,9 +283,13 @@ class MainWindow:
             value_label.grid(row=i, column=1, sticky='w', padx=5, pady=2)
             self.musical_values[label] = value_label
         
-        # Literary Statistics Section
-        literary_stats = ttk.LabelFrame(playlist_stats, text='Literary Analysis')
-        literary_stats.pack(fill='x', padx=10, pady=5)
+        # Literary Statistics Section (with padding)
+        literary_stats = ttk.LabelFrame(
+            playlist_stats, 
+            text='Literary Analysis',
+            style='Bold.TLabelframe'
+        )
+        literary_stats.pack(fill='x', padx=10, pady=(20, 10))  # Added more top padding
         
         literary_labels = [
             ('Most Common Artist:', 'N/A'),
@@ -812,16 +840,24 @@ class MainWindow:
             if self.current_track.album_art_url:
                 try:
                     # Download and display album art
-                    response = requests.get(self.current_track.album_art_url)
-                    img_data = response.content
-                    img = Image.open(io.BytesIO(img_data))
-                    
-                    # Resize to reasonable dimensions (e.g., 200x200)
-                    img = img.resize((200, 200), Image.Resampling.LANCZOS)
-                    
-                    # Keep reference to prevent garbage collection
-                    self.current_album_art = ImageTk.PhotoImage(img)
-                    self.album_art_label.config(image=self.current_album_art)
+                    response = requests.get(self.current_track.album_art_url, timeout=5)
+                    if response.status_code == 200:
+                        img_data = response.content
+                        img = Image.open(io.BytesIO(img_data))
+                        
+                        # Resize to reasonable dimensions (e.g., 200x200)
+                        img = img.resize((200, 200), Image.Resampling.LANCZOS)
+                        
+                        # Convert to RGBA if needed
+                        if img.mode != 'RGBA':
+                            img = img.convert('RGBA')
+                        
+                        # Keep reference to prevent garbage collection
+                        self.current_album_art = ImageTk.PhotoImage(img)
+                        self.album_art_label.config(image=self.current_album_art)
+                    else:
+                        print(f"Failed to load album art: HTTP {response.status_code}")
+                        self.album_art_label.config(image='')
                 except Exception as e:
                     print(f"Error loading album art: {e}")
                     self.album_art_label.config(image='')
