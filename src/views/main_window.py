@@ -239,11 +239,18 @@ class MainWindow:
         # Add debug button
         def check_auth():
             if self.spotify_service.debug_auth():
-                messagebox.showinfo("Debug", "Authentication successful!")
+                Messagebox.show_info(
+                    message="Authentication successful!",
+                    title="Debug"
+                )
             else:
-                messagebox.showerror("Debug", "Authentication failed!")
+                Messagebox.show_error(
+                    message="Authentication failed!",
+                    title="Debug"
+                )
         
         ttk.Button(dialog, text="Check Auth", 
+                  bootstyle="info",
                   command=check_auth).pack(pady=5)
         
         ttk.Label(dialog, text="Enter Spotify Playlist URL:").pack(pady=5)

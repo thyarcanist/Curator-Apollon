@@ -13,6 +13,7 @@ from urllib.parse import urlparse, parse_qs
 from queue import Queue
 import requests
 import base64
+from ttkbootstrap.dialogs import Messagebox  # Update import
 
 class CallbackHandler(http.server.SimpleHTTPRequestHandler):
     def __init__(self, *args, auth_queue=None, **kwargs):
@@ -182,12 +183,12 @@ class SpotifyService:
                         auth_url = self.auth_manager.get_authorize_url()
                         webbrowser.open(auth_url)
                         
-                        # Show instructions to user
-                        messagebox.showinfo(
-                            "Spotify Authentication",
-                            "After authorizing in your browser:\n\n"
-                            "1. Copy the FULL URL from your browser\n"
-                            "2. Paste it in the next dialog"
+                        # Show instructions using ttkbootstrap's Messagebox
+                        Messagebox.show_info(
+                            message="After authorizing in your browser:\n\n"
+                                   "1. Copy the FULL URL from your browser\n"
+                                   "2. Paste it in the next dialog",
+                            title="Spotify Authentication"
                         )
                         
                         response = simpledialog.askstring(
