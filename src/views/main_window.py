@@ -566,8 +566,52 @@ class MainWindow:
         words = []
         word_in_tracks = {}  # Count how many tracks contain each word
         
+        # Words/symbols to ignore unless part of a known band/title
+        ignore_words = {'the', 'a', 'an', 'and', 'or', 'but', 'nor', 'for', 'yet', 'so'}
+        ignore_chars = {'-', '&', '+', 'x', 'vs', 'feat.', 'ft.', 'prod.'}
+        
+        # Known special cases (band names, common title patterns that should be preserved)
+        special_cases = {
+            'a$ap': 'asap',  # A$AP Rocky
+            't-ara': 't-ara',  # T-ara
+            'g-dragon': 'g-dragon',  # G-Dragon
+            'x-japan': 'x-japan',  # X Japan
+            'crosses': '†††',  # Crosses (†††)
+            'day6': 'day6',  # DAY6
+            'txt': 'txt',  # TXT (Tomorrow X Together)
+        }
+        
+        def clean_word(word: str) -> str:
+            """Clean a word while preserving special cases"""
+            word = word.lower()
+            
+            # Check for special cases first
+            for case, preserve in special_cases.items():
+                if case in word:
+                    return preserve
+            
+            # Remove common symbols if not part of special cases
+            if word not in ignore_chars:
+                for char in '()[]{}!?.,;:\'\"':
+                    word = word.replace(char, '')
+                
+                # Remove standalone symbols
+                if word in ignore_chars:
+                    return ''
+                
+                # Remove common words unless they're part of a longer phrase
+                if word in ignore_words and len(word) <= 3:
+                    return ''
+            
+            return word
+        
         for track in tracks:
-            title_words = [w.lower() for w in track.title.split()]
+            # Split on spaces and clean each word
+            title_words = [clean_word(w) for w in track.title.split()]
+            # Filter out empty strings and single characters
+            title_words = [w for w in title_words if w and len(w) > 1]
+            
+            # Add to global word list
             words.extend(title_words)
             
             # Count unique words per track
@@ -576,23 +620,28 @@ class MainWindow:
                 word_in_tracks[word] = word_in_tracks.get(word, 0) + 1
         
         if words:
-            # Most/least used words with track count
-            most_used = max(word_in_tracks.items(), key=lambda x: x[1])
-            least_used = min(word_in_tracks.items(), key=lambda x: x[1])
+            # Filter out very common words for the "most used" statistic
+            filtered_words = {k: v for k, v in word_in_tracks.items() 
+                            if k not in ignore_words and len(k) > 1}
             
-            self.literary_values['Most Used Word (count):'].config(
-                text=f"{most_used[0]} (in {most_used[1]} tracks)"
-            )
-            self.literary_values['Least Used Word (count):'].config(
-                text=f"{least_used[0]} (in {least_used[1]} tracks)"
-            )
-            
-            # Find words that appear multiple times in titles
-            repeated = [word for word, count in word_in_tracks.items() if count > 1]
-            if repeated:
-                self.literary_values['Repeated Words:'].config(
-                    text=f"{', '.join(sorted(repeated)[:5])}..."
+            if filtered_words:
+                most_used = max(filtered_words.items(), key=lambda x: x[1])
+                least_used = min(filtered_words.items(), key=lambda x: x[1])
+                
+                self.literary_values['Most Used Word (count):'].config(
+                    text=f"{most_used[0]} (in {most_used[1]} tracks)"
                 )
+                self.literary_values['Least Used Word (count):'].config(
+                    text=f"{least_used[0]} (in {least_used[1]} tracks)"
+                )
+                
+                # Find meaningful repeated words
+                repeated = [word for word, count in filtered_words.items() 
+                          if count > 1 and word not in ignore_chars]
+                if repeated:
+                    self.literary_values['Repeated Words:'].config(
+                        text=f"{', '.join(sorted(repeated)[:5])}..."
+                    )
             
             # Analyze title patterns
             patterns = []
