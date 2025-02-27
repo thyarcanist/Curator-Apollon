@@ -6,6 +6,7 @@ from typing import List
 from models.library import MusicLibrary, Track
 from services.spotify_service import SpotifyService
 from services.analysis_service import AnalysisService
+from tkinter import filedialog
 
 class MainWindow:
     def __init__(self, root, library: MusicLibrary, 
@@ -121,6 +122,15 @@ class MainWindow:
         ttk.Button(controls, text='Remove Selected', 
                   bootstyle="danger",
                   command=self._remove_selected).pack(side='left', padx=5)
+        
+        # Add export button
+        self.export_button = ttk.Button(
+            controls,
+            text="Export Playlist",
+            command=self.export_playlist,
+            style="Secondary.TButton"
+        )
+        self.export_button.pack(side="left", padx=5)
     
     def _setup_analysis_view(self):
         # Analysis details
@@ -319,3 +329,32 @@ class MainWindow:
                 if track.title == values[0] and track.artist == values[1]:
                     self.library.remove_track(track.id)
                     break 
+
+    def export_playlist(self):
+        """Handle playlist export"""
+        if not self.current_playlist_url:
+            Messagebox.show_warning(
+                "No Playlist",
+                "Please import a playlist first before exporting."
+            )
+            return
+            
+        # Ask user for save location
+        file_path = filedialog.asksaveasfilename(
+            defaultextension=".txt",
+            filetypes=[("Text files", "*.txt"), ("All files", "*.*")],
+            initialfile="playlist_export.txt",
+            title="Export Playlist"
+        )
+        
+        if file_path:
+            if self.spotify_service.export_playlist_to_txt(self.current_playlist_url, file_path):
+                Messagebox.show_info(
+                    "Export Successful",
+                    f"Playlist has been exported to:\n{file_path}"
+                )
+            else:
+                Messagebox.show_error(
+                    "Export Failed",
+                    "Failed to export playlist. Please check the logs for details."
+                ) 

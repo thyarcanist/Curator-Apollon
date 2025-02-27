@@ -304,7 +304,8 @@ class SpotifyService:
                                     features['key'], features['mode']
                                 ),
                                 energy_level=features['energy'],
-                                spotify_url=f"https://open.spotify.com/track/{track['id']}"
+                                spotify_url=f"https://open.spotify.com/track/{track['id']}",
+                                album=track['album']['name']
                             ))
                             print(f"✓ Imported with audio features")
                         else:
@@ -317,7 +318,8 @@ class SpotifyService:
                                 key="Unknown",
                                 camelot_position=0,
                                 energy_level=0,
-                                spotify_url=f"https://open.spotify.com/track/{track['id']}"
+                                spotify_url=f"https://open.spotify.com/track/{track['id']}",
+                                album=track['album']['name']
                             ))
                             print("! Imported without audio features")
                     except Exception as e:
@@ -331,7 +333,8 @@ class SpotifyService:
                             key="Unknown",
                             camelot_position=0,
                             energy_level=0,
-                            spotify_url=f"https://open.spotify.com/track/{track['id']}"
+                            spotify_url=f"https://open.spotify.com/track/{track['id']}",
+                            album=track['album']['name']
                         ))
                 
                 if not tracks:
@@ -534,3 +537,23 @@ class SpotifyService:
         except Exception as e:
             print(f"Error getting playlist tracks: {e}")
             return [] 
+
+    def export_playlist_to_txt(self, playlist_url: str, output_path: str) -> bool:
+        """Export playlist tracks to a text file"""
+        try:
+            tracks = self.import_playlist(playlist_url)
+            
+            with open(output_path, 'w', encoding='utf-8') as f:
+                f.write("Curator Apollon - Playlist Export\n")
+                f.write("================================\n\n")
+                
+                for i, track in enumerate(tracks, 1):
+                    album_name = track.album if hasattr(track, 'album') else "Unknown Album"
+                    f.write(f"{i}. {track.title} - {track.artist} [{album_name}]\n")
+            
+            print(f"Successfully exported {len(tracks)} tracks to {output_path}")
+            return True
+            
+        except Exception as e:
+            print(f"Export error: {str(e)}")
+            return False 
