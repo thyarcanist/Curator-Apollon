@@ -493,18 +493,38 @@ class MainWindow:
         """Show dialog to import a Spotify playlist"""
         dialog = ImportPlaylistDialog(self.root, self.spotify_service)
         
+        # Wait for dialog to close and check result
+        self.root.wait_window(dialog)
+        
         if dialog.result:
+            url = dialog.result
+            print(f"Starting import of playlist: {url}")  # Debug print
+            
             def on_import_complete(tracks):
                 if tracks:
+                    print(f"Import completed with {len(tracks)} tracks")  # Debug print
                     self.library.add_tracks(tracks)
                     self._update_analysis()
                     self.set_status(f"Imported {len(tracks)} tracks")
                 else:
+                    print("Import failed - no tracks found")  # Debug print
                     self.set_status("Import failed - no tracks found")
             
-            self.set_status("Importing playlist...")
-            self.current_playlist_url = dialog.result
-            self.spotify_service.import_playlist_async(dialog.result, callback=on_import_complete)
+            try:
+                self.set_status("Importing playlist...")
+                self.current_playlist_url = url
+                # Start the async import
+                self.spotify_service.import_playlist_async(
+                    url, 
+                    callback=on_import_complete
+                )
+            except Exception as e:
+                print(f"Import error: {str(e)}")  # Debug print
+                self.set_status(f"Import error: {str(e)}")
+                Messagebox.show_error(
+                    message=f"Import failed: {str(e)}",
+                    title="Import Error"
+                )
     
     def _remove_selected(self):
         """Remove selected tracks from the library"""
@@ -1275,7 +1295,24 @@ class ImportPlaylistDialog(ttk.Toplevel):
     
     def _on_import(self):
         """Handle import button click"""
-        self.result = self.url_var.get()
+        url = self.url_var.get().strip()  # Add strip() to remove whitespace
+        if not url:
+            Messagebox.show_error(
+                message="Please enter a playlist URL",
+                title="Import Error"
+            )
+            return
+            
+        # Basic URL validation
+        if not url.startswith('https://open.spotify.com/playlist/'):
+            Messagebox.show_error(
+                message="Please enter a valid Spotify playlist URL",
+                title="Import Error"
+            )
+            return
+            
+        print(f"Dialog returning URL: {url}")  # Debug print
+        self.result = url
         self.destroy()
 
 class ScaledMessageDialog(ttk.Toplevel):
