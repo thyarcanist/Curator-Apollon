@@ -107,12 +107,7 @@ class MainWindow:
         self.notebook.add(self.library_frame, text='Library')
         self._setup_library_view()
         
-        # Playlist Info View
-        self.playlist_info_frame = ttk.Frame(self.notebook)
-        self.notebook.add(self.playlist_info_frame, text='Playlist Info')
-        self._setup_playlist_info_view()
-        
-        # Analysis View (merged)
+        # Analysis View
         self.analysis_frame = ttk.Frame(self.notebook)
         self.notebook.add(self.analysis_frame, text='Analysis')
         self._setup_analysis_view()
@@ -173,70 +168,6 @@ class MainWindow:
         # Add track selection binding
         self.track_list.bind('<<TreeviewSelect>>', self._on_track_select)
     
-    def _setup_playlist_info_view(self):
-        """Setup the playlist information view"""
-        # Create main sections
-        musical_stats = ttk.LabelFrame(self.playlist_info_frame, text='Musical Statistics')
-        musical_stats.pack(fill='x', padx=10, pady=5)
-        
-        literary_stats = ttk.LabelFrame(self.playlist_info_frame, text='Literary Analysis')
-        literary_stats.pack(fill='x', padx=10, pady=5)
-        
-        # Musical Statistics Section
-        musical_grid = ttk.Frame(musical_stats)
-        musical_grid.pack(padx=10, pady=5)
-        
-        musical_labels = [
-            ('Average BPM:', '0'),
-            ('Average Key:', 'N/A'),
-            ('Max BPM:', '0'),
-            ('Min BPM:', '0'),
-            ('Most Common Key:', 'N/A'),
-            ('Key Distribution:', 'N/A'),
-            ('Time Signatures:', 'N/A'),
-            ('Common Time Songs:', '0'),
-            ('Odd Time Songs:', '0')
-        ]
-        
-        self.musical_values = {}
-        for i, (label, default) in enumerate(musical_labels):
-            ttk.Label(musical_grid, text=label).grid(row=i, column=0, sticky='e', padx=5, pady=2)
-            value_label = ttk.Label(musical_grid, text=default)
-            value_label.grid(row=i, column=1, sticky='w', padx=5, pady=2)
-            self.musical_values[label] = value_label
-        
-        # Literary Statistics Section
-        literary_grid = ttk.Frame(literary_stats)
-        literary_grid.pack(padx=10, pady=5)
-        
-        literary_labels = [
-            ('Most Common Artist:', 'N/A'),
-            ('Most Used Word (count):', 'N/A'),
-            ('Least Used Word (count):', 'N/A'),
-            ('Top Characters:', 'N/A'),
-            ('Special Characters:', 'N/A'),
-            ('Numbers Used:', 'N/A'),
-            ('Average Title Length:', '0'),
-            ('Unique Artists:', '0'),
-            ('Repeated Words:', 'N/A'),
-            ('Title Pattern:', 'N/A')
-        ]
-        
-        self.literary_values = {}
-        for i, (label, default) in enumerate(literary_labels):
-            ttk.Label(literary_grid, text=label).grid(row=i, column=0, sticky='e', padx=5, pady=2)
-            value_label = ttk.Label(literary_grid, text=default)
-            value_label.grid(row=i, column=1, sticky='w', padx=5, pady=2)
-            self.literary_values[label] = value_label
-        
-        # Refresh button
-        ttk.Button(
-            self.playlist_info_frame,
-            text="Refresh Statistics",
-            command=self._update_playlist_stats,
-            bootstyle="secondary"
-        ).pack(pady=10)
-
     def _setup_analysis_view(self):
         """Setup the analysis view with playlist and track statistics"""
         # Create scrollable frame for all content
