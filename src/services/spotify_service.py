@@ -111,9 +111,18 @@ class SpotifyService:
             client_id=self.client_id,
             client_secret=self.client_secret,
             redirect_uri="https://apollon.occybyte.com/callback",
-            scope="playlist-read-private playlist-read-collaborative",
+            scope=" ".join([
+                "playlist-read-private",
+                "playlist-read-collaborative",
+                "user-library-read",
+                "user-read-private",
+                "user-read-email",
+                "user-read-playback-state",
+                "user-read-currently-playing",
+                "user-read-audio-features"
+            ]),
             cache_path=str(self.cache_path),
-            open_browser=False,  # Don't open browser yet
+            open_browser=False,
             show_dialog=True
         )
         
@@ -270,41 +279,50 @@ class SpotifyService:
             
             print(f"Attempting to access playlist with ID: {playlist_id}")
             
-            # First just try to get basic playlist info
             try:
-                # Get the playlist without any field filtering first
                 playlist = self.sp.playlist(playlist_id)
                 print(f"Found playlist: {playlist['name']}")
                 
                 tracks = []
                 items = playlist['tracks']['items']
                 
+                # Get all track IDs first
+                track_ids = []
+                for item in items:
+                    if item['track'] and not item['track'].get('is_local', False):
+                        track_ids.append(item['track']['id'])
+                
+                # Get audio features in batches of 100 (Spotify API limit)
+                features_map = {}
+                for i in range(0, len(track_ids), 100):
+                    batch_ids = track_ids[i:i+100]
+                    batch_features = self.sp.audio_features(batch_ids)
+                    for track_id, features in zip(batch_ids, batch_features):
+                        if features:
+                            features_map[track_id] = features
+                
+                # Now process tracks with their features
                 for item in items:
                     if not item['track'] or item['track'].get('is_local', False):
                         continue
                     
                     track = item['track']
-                    print(f"Processing track: {track['name']}")
+                    features = features_map.get(track['id'])
                     
-                    # Get audio features one at a time to debug
-                    try:
-                        features = self.sp.audio_features([track['id']])[0]
-                        if features:
-                            tracks.append(Track(
-                                id=track['id'],
-                                title=track['name'],
-                                artist=track['artists'][0]['name'],
-                                bpm=features['tempo'],
-                                key=self._convert_key(features['key'], features['mode']),
-                                camelot_position=self._get_camelot_position(
-                                    features['key'], features['mode']
-                                ),
-                                energy_level=features['energy']
-                            ))
-                            print(f"Successfully imported: {track['name']}")
-                    except Exception as e:
-                        print(f"Error getting features for track {track['name']}: {str(e)}")
-                        continue
+                    if features:
+                        tracks.append(Track(
+                            id=track['id'],
+                            title=track['name'],
+                            artist=track['artists'][0]['name'],
+                            bpm=features['tempo'],
+                            key=self._convert_key(features['key'], features['mode']),
+                            camelot_position=self._get_camelot_position(
+                                features['key'], features['mode']
+                            ),
+                            energy_level=features['energy'],
+                            spotify_url=f"https://open.spotify.com/track/{track['id']}"
+                        ))
+                        print(f"Successfully imported: {track['name']}")
                 
                 if not tracks:
                     raise Exception("No tracks could be imported")
@@ -454,11 +472,25 @@ class SpotifyService:
             
             print("Testing API access...")
             try:
+                # Test 1: Get current user profile
                 me = self.sp.me()
                 print(f"✓ Successfully authenticated as: {me['display_name']} ({me['id']})")
                 
-                playlist = self.sp.playlist("37i9dQZF1DXcBWIGoYBM5M")
-                print(f"✓ Successfully accessed test playlist: {playlist['name']}")
+                # Test 2: Get user's playlists
+                playlists = self.sp.current_user_playlists(limit=1)
+                if playlists and playlists['items']:
+                    test_playlist = playlists['items'][0]
+                    print(f"✓ Successfully accessed user playlist: {test_playlist['name']}")
+                else:
+                    print("✓ API connection working but no playlists found")
+                
+                # Test 3: Try to get audio features for a known track
+                test_track_id = "11dFghVXANMlKmJXsNCbNl"  # This is a Spotify test track ID
+                features = self.sp.audio_features([test_track_id])
+                if features and features[0]:
+                    print("✓ Successfully accessed audio features API")
+                else:
+                    print("✗ Could not access audio features API")
                 
                 print("=== Authentication Debug Complete ===\n")
                 return True
