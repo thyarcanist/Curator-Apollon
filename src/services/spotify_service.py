@@ -114,12 +114,9 @@ class SpotifyService:
             scope=" ".join([
                 "playlist-read-private",
                 "playlist-read-collaborative",
-                "user-library-read",
-                "user-read-private",
-                "user-read-email",
-                "user-read-playback-state",
-                "user-read-currently-playing",
-                "user-read-audio-features"
+                "playlist-modify-public",
+                "playlist-modify-private",
+                "user-library-read"
             ]),
             cache_path=str(self.cache_path),
             open_browser=False,
@@ -286,47 +283,28 @@ class SpotifyService:
                 tracks = []
                 items = playlist['tracks']['items']
                 
-                # Get all track IDs first
-                track_ids = []
-                for item in items:
-                    if item['track'] and not item['track'].get('is_local', False):
-                        track_ids.append(item['track']['id'])
-                
-                # Get audio features in batches of 100 (Spotify API limit)
-                features_map = {}
-                for i in range(0, len(track_ids), 100):
-                    batch_ids = track_ids[i:i+100]
-                    batch_features = self.sp.audio_features(batch_ids)
-                    for track_id, features in zip(batch_ids, batch_features):
-                        if features:
-                            features_map[track_id] = features
-                
-                # Now process tracks with their features
+                # Process tracks without audio features
                 for item in items:
                     if not item['track'] or item['track'].get('is_local', False):
                         continue
                     
                     track = item['track']
-                    features = features_map.get(track['id'])
-                    
-                    if features:
-                        tracks.append(Track(
-                            id=track['id'],
-                            title=track['name'],
-                            artist=track['artists'][0]['name'],
-                            bpm=features['tempo'],
-                            key=self._convert_key(features['key'], features['mode']),
-                            camelot_position=self._get_camelot_position(
-                                features['key'], features['mode']
-                            ),
-                            energy_level=features['energy'],
-                            spotify_url=f"https://open.spotify.com/track/{track['id']}"
-                        ))
-                        print(f"Successfully imported: {track['name']}")
+                    tracks.append(Track(
+                        id=track['id'],
+                        title=track['name'],
+                        artist=track['artists'][0]['name'],
+                        bpm=0,  # Default value since we can't get audio features
+                        key="Unknown",  # Default value
+                        camelot_position=0,  # Default value
+                        energy_level=0,  # Default value
+                        spotify_url=f"https://open.spotify.com/track/{track['id']}"
+                    ))
+                    print(f"Imported track: {track['name']} by {track['artists'][0]['name']}")
                 
                 if not tracks:
                     raise Exception("No tracks could be imported")
                 
+                print(f"Successfully imported {len(tracks)} tracks (without audio features)")
                 return tracks
                 
             except Exception as e:
