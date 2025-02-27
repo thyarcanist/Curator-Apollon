@@ -334,18 +334,37 @@ class MainWindow:
     
     def update(self):
         """Update UI when library changes"""
-        self._refresh_track_list()
+        self._update_track_list()
         self._update_playlist_stats()
     
-    def _refresh_track_list(self):
-        self.track_list.delete(*self.track_list.get_children())
-        for track in self.library.get_all_tracks():
-            self.track_list.insert('', 'end', values=(
-                track.title,
-                track.artist,
-                track.bpm,
-                track.key
-            )) 
+    def _update_track_list(self):
+        """Update the track list display with error handling"""
+        try:
+            # Clear existing items
+            for item in self.track_list.get_children():
+                self.track_list.delete(item)
+            
+            # Add tracks to display
+            for track in self.library.get_all_tracks():
+                try:
+                    self.track_list.insert(
+                        '', 'end',
+                        values=(
+                            track.title,
+                            track.artist,
+                            f"{track.bpm:.0f}" if track.bpm else "N/A",
+                            track.key or "N/A"
+                        )
+                    )
+                except Exception as e:
+                    print(f"Error adding track to display: {e}")
+            
+            # Update analysis
+            self._update_analysis()
+            
+        except Exception as e:
+            print(f"Error updating track list: {e}")
+            self.set_status("Error updating display")
 
     def _add_track_dialog(self):
         """Open dialog for adding a track"""
@@ -468,24 +487,8 @@ class MainWindow:
                 
                 self.set_status("Importing playlist...")
                 self.current_playlist_url = url
-                tracks = self.spotify_service.import_playlist(url)
+                self._import_playlist()
                 
-                if tracks:
-                    for track in tracks:
-                        self.library.add_track(track)
-                    dialog.destroy()
-                    self.set_status(f"Successfully imported {len(tracks)} tracks")
-                    Messagebox.show_info(
-                        message=f"Successfully imported {len(tracks)} tracks",
-                        title="Success"
-                    )
-                else:
-                    self.set_status("Import failed - no tracks found")
-                    Messagebox.show_error(
-                        message="No tracks were imported",
-                        title="Error"
-                    )
-                    
             except Exception as e:
                 self.set_status(f"Import error: {str(e)}")
                 Messagebox.show_error(
@@ -845,8 +848,8 @@ class MainWindow:
                         img_data = response.content
                         img = Image.open(io.BytesIO(img_data))
                         
-                        # Resize to reasonable dimensions (e.g., 200x200)
-                        img = img.resize((200, 200), Image.Resampling.LANCZOS)
+                        # Increase size to 300x300 (was 200x200)
+                        img = img.resize((300, 300), Image.Resampling.LANCZOS)
                         
                         # Convert to RGBA if needed
                         if img.mode != 'RGBA':
@@ -889,4 +892,136 @@ class MainWindow:
             for label in self.track_values.values():
                 label.config(text='N/A')
             self.prev_button.config(state='disabled')
-            self.next_button.config(state='disabled') 
+            self.next_button.config(state='disabled')
+
+    def _import_playlist(self):
+        """Import a playlist from Spotify URL"""
+        url = self.current_playlist_url
+        if not url:
+            Messagebox.show_error(
+                "Please enter a Spotify playlist URL",
+                "Import Error"
+            )
+            return
+        
+        def on_import_complete(tracks):
+            self.library.add_tracks(tracks)
+            self._update_analysis()
+            self.status_bar.config(text=f"Imported {len(tracks)} tracks")
+            
+        # Start import in background
+        self.spotify_service.import_playlist_async(url, callback=on_import_complete)
+        self.status_bar.config(text="Importing playlist...") 
+
+    def _update_analysis(self):
+        """Update all analysis displays"""
+        tracks = self.library.get_all_tracks()
+        if tracks:
+            # Update musical analysis
+            self._update_musical_analysis(tracks)
+            # Update literary analysis
+            self._update_literary_analysis(tracks)
+            self.set_status(f"Analysis updated for {len(tracks)} tracks")
+        else:
+            self._reset_stats() 
+
+    def _update_musical_analysis(self, tracks: List[Track]):
+        """Update musical analysis with handling for missing features"""
+        if not tracks:
+            return
+            
+        # BPM Analysis
+        valid_bpms = [t.bpm for t in tracks if t.bpm and t.bpm > 0]
+        if valid_bpms:
+            avg_bpm = sum(valid_bpms) / len(valid_bpms)
+            min_bpm = min(valid_bpms)
+            max_bpm = max(valid_bpms)
+            
+            self.musical_values['Average BPM:'].config(text=f"{avg_bpm:.1f}")
+            self.musical_values['BPM Range:'].config(text=f"{min_bpm:.1f} - {max_bpm:.1f}")
+            self.musical_values['Tracks with BPM:'].config(
+                text=f"{len(valid_bpms)}/{len(tracks)} ({(len(valid_bpms)/len(tracks))*100:.1f}%)"
+            )
+        else:
+            self.musical_values['Average BPM:'].config(text="N/A")
+            self.musical_values['BPM Range:'].config(text="N/A")
+            self.musical_values['Tracks with BPM:'].config(text="0/0 (0%)")
+        
+        # Key Analysis
+        valid_keys = [t.key for t in tracks if t.key and t.key != "Unknown"]
+        if valid_keys:
+            key_counts = {}
+            for key in valid_keys:
+                key_counts[key] = key_counts.get(key, 0) + 1
+            
+            # Most common keys
+            common_keys = sorted(key_counts.items(), key=lambda x: x[1], reverse=True)[:3]
+            key_display = ", ".join(f"{k}({v})" for k, v in common_keys)
+            
+            self.musical_values['Common Keys:'].config(text=key_display)
+            self.musical_values['Tracks with Key:'].config(
+                text=f"{len(valid_keys)}/{len(tracks)} ({(len(valid_keys)/len(tracks))*100:.1f}%)"
+            )
+        else:
+            self.musical_values['Common Keys:'].config(text="N/A")
+            self.musical_values['Tracks with Key:'].config(text="0/0 (0%)")
+        
+        # Energy Analysis
+        valid_energy = [t.energy_level for t in tracks if t.energy_level is not None and t.energy_level > 0]
+        if valid_energy:
+            avg_energy = sum(valid_energy) / len(valid_energy)
+            self.musical_values['Average Energy:'].config(text=f"{avg_energy:.2f}")
+            self.musical_values['Tracks with Energy:'].config(
+                text=f"{len(valid_energy)}/{len(tracks)} ({(len(valid_energy)/len(tracks))*100:.1f}%)"
+            )
+        else:
+            self.musical_values['Average Energy:'].config(text="N/A")
+            self.musical_values['Tracks with Energy:'].config(text="0/0 (0%)")
+        
+        # Camelot Analysis
+        valid_camelot = [t.camelot_position for t in tracks if t.camelot_position and t.camelot_position != "Unknown"]
+        if valid_camelot:
+            camelot_counts = {}
+            for pos in valid_camelot:
+                camelot_counts[pos] = camelot_counts.get(pos, 0) + 1
+            
+            # Most common positions
+            common_pos = sorted(camelot_counts.items(), key=lambda x: x[1], reverse=True)[:3]
+            pos_display = ", ".join(f"{p}({v})" for p, v in common_pos)
+            
+            self.musical_values['Common Camelot:'].config(text=pos_display)
+            self.musical_values['Tracks with Camelot:'].config(
+                text=f"{len(valid_camelot)}/{len(tracks)} ({(len(valid_camelot)/len(tracks))*100:.1f}%)"
+            )
+        else:
+            self.musical_values['Common Camelot:'].config(text="N/A")
+            self.musical_values['Tracks with Camelot:'].config(text="0/0 (0%)")
+        
+        # Time Signature Analysis
+        time_sigs = {}
+        common_time = 0
+        odd_time = 0
+        
+        for track in tracks:
+            sig = track.time_signature
+            if sig != "Unknown":
+                time_sigs[sig] = time_sigs.get(sig, 0) + 1
+                if sig == "4/4":
+                    common_time += 1
+                else:
+                    odd_time += 1
+        
+        if time_sigs:
+            sig_display = []
+            for sig, count in sorted(time_sigs.items(), key=lambda x: x[1], reverse=True):
+                percentage = (count / len(tracks)) * 100
+                sig_display.append(f"{sig}({count}, {percentage:.1f}%)")
+            
+            self.musical_values['Time Signatures:'].config(text=", ".join(sig_display))
+            total_analyzed = sum(time_sigs.values())
+            self.musical_values['Tracks with Time Sig:'].config(
+                text=f"{total_analyzed}/{len(tracks)} ({(total_analyzed/len(tracks))*100:.1f}%)"
+            )
+        else:
+            self.musical_values['Time Signatures:'].config(text="N/A")
+            self.musical_values['Tracks with Time Sig:'].config(text="0/0 (0%)") 

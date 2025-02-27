@@ -15,6 +15,10 @@ import requests
 import base64
 from ttkbootstrap.dialogs import Messagebox  # Update import
 import sys
+import time
+from typing import List
+from concurrent.futures import ThreadPoolExecutor
+from functools import partial
 
 class CallbackHandler(http.server.SimpleHTTPRequestHandler):
     def __init__(self, *args, auth_queue=None, **kwargs):
@@ -134,6 +138,9 @@ class SpotifyService:
                 print("Spotify client initialized from cache")
         except Exception as e:
             print(f"Cache initialization error (non-fatal): {str(e)}")
+        
+        self.executor = ThreadPoolExecutor(max_workers=1)
+        self.current_import_task = None
     
     def _setup_cache(self):
         """Setup cache in the application directory instead of user home"""
@@ -202,53 +209,49 @@ class SpotifyService:
 
     def ensure_authenticated(self):
         """Ensure we have a valid OAuth token"""
-        if self.sp is None:
-            print("No Spotify client exists, initializing...")
-            try:
-                print("Checking for cached token...")
+        try:
+            if self.sp is None or self.auth_manager.is_token_expired(self.auth_manager.get_cached_token()):
+                print("Token expired or missing, refreshing...")
+                
+                # Try to get cached token first
                 token_info = self.auth_manager.get_cached_token()
                 
-                if not token_info or self.auth_manager.is_token_expired(token_info):
-                    print("No valid cached token, starting new authentication...")
+                if token_info and not self.auth_manager.is_token_expired(token_info):
+                    print("Using cached token")
+                else:
+                    print("Need new token, starting OAuth flow")
                     auth_url = self.auth_manager.get_authorize_url()
-                    print(f"Opening auth URL: {auth_url}")
                     webbrowser.open(auth_url)
-                    
-                    # Show instructions
-                    Messagebox.show_info(
-                        message="After authorizing in your browser:\n\n"
-                               "1. Copy the FULL URL from your browser\n"
-                               "2. Paste it in the next dialog",
-                        title="Spotify Authentication"
-                    )
                     
                     response = simpledialog.askstring(
                         "Spotify Authentication",
-                        "Please paste the FULL URL from your browser:",
-                        initialvalue="https://apollon.occybyte.com/callback?code="
+                        "Please authorize in your browser and paste the FULL callback URL:",
+                        parent=None
                     )
                     
-                    if response:
-                        print("Got response URL, extracting code...")
-                        code = self.auth_manager.parse_response_code(response)
-                        print("Getting access token...")
-                        token_info = self.auth_manager.get_access_token(code)
-                    else:
-                        raise Exception("Authentication cancelled by user")
-                else:
-                    print("Using cached token")
+                    if not response:
+                        raise Exception("Authentication cancelled")
+                        
+                    code = self.auth_manager.parse_response_code(response)
+                    token_info = self.auth_manager.get_access_token(code, as_dict=True)
                 
-                print("Initializing Spotify client...")
                 self.sp = spotipy.Spotify(auth_manager=self.auth_manager)
-                print("Spotify client initialized successfully")
                 
-            except Exception as e:
-                print(f"Error during authentication: {str(e)}")
-                if self.cache_path.exists():
-                    print("Removing invalid cache file...")
-                    self.cache_path.unlink()
-                raise Exception(f"Failed to initialize Spotify client: {str(e)}")
-    
+                # Verify the token works
+                try:
+                    self.sp.current_user()
+                    print("Authentication successful")
+                    return True
+                except Exception as e:
+                    print(f"Token verification failed: {e}")
+                    self.sp = None
+                    raise
+                    
+        except Exception as e:
+            print(f"Authentication error: {e}")
+            self.sp = None
+            raise
+
     def get_track_info(self, spotify_url: str) -> Track:
         """Get track info from Spotify URL"""
         self.ensure_authenticated()
@@ -277,94 +280,120 @@ class SpotifyService:
             album_art_url=track_info['album']['images'][0]['url'] if track_info['album']['images'] else None
         )
     
-    def import_playlist(self, playlist_url: str) -> list[Track]:
-        """Import tracks from a Spotify playlist URL"""
-        self.ensure_authenticated()
+    def import_playlist_async(self, playlist_url: str, callback=None):
+        """Import playlist asynchronously with proper error handling"""
+        def import_task():
+            try:
+                tracks = self.import_playlist(playlist_url)
+                if callback:
+                    callback(tracks)
+            except Exception as e:
+                print(f"Import failed: {e}")
+                Messagebox.show_error(
+                    message=f"Failed to import playlist: {str(e)}",
+                    title="Import Error"
+                )
+                if callback:
+                    callback([])
+
+        return self.executor.submit(import_task)
+
+    def import_playlist(self, playlist_url: str) -> List[Track]:
+        """Import tracks with basic info fallback"""
         try:
+            # Force token refresh before import
+            self.sp = None
+            self.ensure_authenticated()
+            
             playlist_id = self._extract_spotify_id(playlist_url)
             if not playlist_id:
                 raise ValueError("Invalid playlist URL")
+
+            print("\nStarting playlist import...")
+            all_tracks = []
+            batch_size = 100
+            max_tracks = 5000
             
-            print(f"Attempting to access playlist with ID: {playlist_id}")
+            # Get initial playlist data
+            playlist = self.sp.playlist(playlist_id, fields="tracks.total")
+            total_tracks = min(playlist['tracks']['total'], max_tracks)
+            total_epochs = (total_tracks + batch_size - 1) // batch_size
             
-            try:
-                playlist = self.sp.playlist(playlist_id)
-                print(f"Found playlist: {playlist['name']}")
+            print(f"Found {total_tracks} tracks (will process in {total_epochs} epochs)")
+            
+            for epoch in range(total_epochs):
+                if self.auth_manager.is_token_expired(self.auth_manager.get_cached_token()):
+                    print("Token expired, refreshing...")
+                    self.ensure_authenticated()
                 
-                tracks = []
-                items = playlist['tracks']['items']
+                offset = epoch * batch_size
+                print(f"\nEpoch {epoch + 1}/{total_epochs}")
+                print(f"Processing tracks {offset + 1}-{min(offset + batch_size, total_tracks)}")
                 
-                for item in items:
-                    if not item['track'] or item['track'].get('is_local', False):
+                # Get batch of tracks
+                results = self.sp.playlist_tracks(
+                    playlist_id,
+                    offset=offset,
+                    limit=batch_size,
+                    market="US"
+                )
+                
+                batch_tracks = []
+                for item in results['items']:
+                    if not item['track']:
                         continue
-                    
+                        
                     track = item['track']
-                    print(f"Processing: {track['name']} by {track['artists'][0]['name']}")
-                    
                     try:
-                        # Try to get audio features one at a time
-                        features = self.sp.audio_features(track['id'])[0]
-                        if features:
-                            tracks.append(Track(
-                                id=track['id'],
-                                title=track['name'],
-                                artist=track['artists'][0]['name'],
-                                bpm=features['tempo'],
-                                key=self._convert_key(features['key'], features['mode']),
-                                camelot_position=self._get_camelot_position(
-                                    features['key'], features['mode']
-                                ),
-                                energy_level=features['energy'],
-                                spotify_url=f"https://open.spotify.com/track/{track['id']}",
-                                album=track['album']['name'],
-                                time_signature=f"{features['time_signature']}/4",
-                                album_art_url=track['album']['images'][0]['url'] if track['album']['images'] else None
-                            ))
-                            print("✓ Imported with audio features")
-                        else:
-                            # Fallback to basic track info if no features available
-                            tracks.append(Track(
-                                id=track['id'],
-                                title=track['name'],
-                                artist=track['artists'][0]['name'],
-                                bpm=0,
-                                key="Unknown",
-                                camelot_position=0,
-                                energy_level=0,
-                                spotify_url=f"https://open.spotify.com/track/{track['id']}",
-                                album=track['album']['name'],
-                                time_signature="4/4",
-                                album_art_url=None
-                            ))
-                            print("! Imported without audio features")
-                    except Exception as e:
-                        print(f"! Error getting audio features: {str(e)}")
-                        # Still add the track without audio features
-                        tracks.append(Track(
+                        # Always create track with mandatory info
+                        track_obj = Track(
                             id=track['id'],
                             title=track['name'],
                             artist=track['artists'][0]['name'],
-                            bpm=0,
-                            key="Unknown",
-                            camelot_position=0,
-                            energy_level=0,
-                            spotify_url=f"https://open.spotify.com/track/{track['id']}",
                             album=track['album']['name'],
-                            time_signature="4/4",
-                            album_art_url=None
-                        ))
+                            spotify_url=f"https://open.spotify.com/track/{track['id']}",
+                            album_art_url=track['album']['images'][0]['url'] if track['album']['images'] else None,
+                            # Default values for audio features
+                            bpm=0.0,
+                            key="Unknown",
+                            camelot_position="Unknown",
+                            energy_level=0.0,
+                            time_signature="4/4"  # Default to common time
+                        )
+                        
+                        # Try to get audio features, but continue if they fail
+                        try:
+                            features = self.sp.audio_features([track['id']])[0]
+                            if features:
+                                track_obj.bpm = features['tempo']
+                                track_obj.key = self._convert_key(features['key'], features['mode'])
+                                track_obj.camelot_position = self._get_camelot_position(features['key'], features['mode'])
+                                track_obj.energy_level = features['energy']
+                                track_obj.time_signature = f"{features['time_signature']}/4"
+                                print("✓", end='', flush=True)
+                            else:
+                                print("○", end='', flush=True)  # Basic info only
+                        except Exception as e:
+                            print("○", end='', flush=True)  # Basic info only
+                            
+                        batch_tracks.append(track_obj)
+                        
+                    except Exception as e:
+                        print("!", end='', flush=True)  # Complete failure
+                        continue
+                    
+                    time.sleep(0.1)  # Small delay between tracks
                 
-                if not tracks:
-                    raise Exception("No tracks could be imported")
+                all_tracks.extend(batch_tracks)
+                print(f"\nProcessed {len(batch_tracks)} tracks in this epoch")
                 
-                print(f"\nImport Summary:")
-                print(f"Total tracks: {len(tracks)}")
-                return tracks
-                
-            except Exception as e:
-                print(f"Error accessing playlist: {str(e)}")
-                raise
-                
+                if epoch < total_epochs - 1:
+                    time.sleep(2)
+            
+            print(f"\nImport Summary:")
+            print(f"Total tracks imported: {len(all_tracks)}")
+            return all_tracks
+            
         except Exception as e:
             print(f"Import error: {str(e)}")
             raise
@@ -574,3 +603,8 @@ class SpotifyService:
         except Exception as e:
             print(f"Export error: {str(e)}")
             return False 
+
+    def __del__(self):
+        """Cleanup when service is destroyed"""
+        if hasattr(self, 'executor'):
+            self.executor.shutdown(wait=False) 

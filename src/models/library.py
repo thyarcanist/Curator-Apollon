@@ -17,27 +17,35 @@ class Track:
 
 class MusicLibrary:
     def __init__(self):
-        self.tracks: Dict[str, Track] = {}
+        self.tracks = []
         self.observers = []
     
-    def add_track(self, track: Track) -> None:
-        self.tracks[track.id] = track
+    def add_track(self, track: Track):
+        """Add a single track"""
+        self.tracks.append(track)
         self._notify_observers()
     
-    def remove_track(self, track_id: str) -> None:
-        if track_id in self.tracks:
-            del self.tracks[track_id]
+    def add_tracks(self, tracks: List[Track]):
+        """Add multiple tracks at once"""
+        for track in tracks:
+            self.tracks.append(track)
+        self._notify_observers()
+    
+    def remove_track(self, track: Track):
+        if track in self.tracks:
+            self.tracks.remove(track)
             self._notify_observers()
     
-    def get_track(self, track_id: str) -> Track:
-        return self.tracks.get(track_id)
-    
     def get_all_tracks(self) -> List[Track]:
-        return list(self.tracks.values())
+        return self.tracks.copy()
+    
+    def clear(self):
+        self.tracks.clear()
+        self._notify_observers()
     
     def add_observer(self, observer):
         self.observers.append(observer)
     
     def _notify_observers(self):
         for observer in self.observers:
-            observer.update() 
+            observer._update_track_list() 
