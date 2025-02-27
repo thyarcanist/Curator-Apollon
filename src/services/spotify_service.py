@@ -139,18 +139,14 @@ class SpotifyService:
             try:
                 port, auth_queue = self._start_auth_server()
                 
+                # Define scopes as a single space-separated string
+                SCOPES = "playlist-read-private playlist-read-collaborative playlist-read-public user-library-read user-read-private user-read-email"
+                
                 self.auth_manager = SpotifyOAuth(
                     client_id="55c875d209d94fdf963a31243f5d6fdb",
                     client_secret="cf4f384ddf3c46c49e8ca8d15d3b71ba",
                     redirect_uri="https://apollon.occybyte.com/callback",
-                    scope=" ".join([
-                        "playlist-read-private",
-                        "playlist-read-collaborative",
-                        "playlist-read-public",
-                        "user-library-read",
-                        "user-read-private",
-                        "user-read-email"
-                    ]),
+                    scope=SCOPES,  # Use the single string instead of join
                     cache_path=str(self.cache_path),
                     open_browser=True
                 )
