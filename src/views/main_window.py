@@ -11,6 +11,8 @@ from pathlib import Path
 import tkinter.font as tkFont
 from PIL import Image, ImageTk
 import os
+import requests
+import io
 
 class MainWindow:
     def __init__(self, root, library: MusicLibrary, 
@@ -180,6 +182,35 @@ class MainWindow:
         self.current_track_frame = ttk.LabelFrame(content, text='Current Track Analysis')
         self.current_track_frame.pack(fill='x', padx=10, pady=5)
         
+        # Navigation buttons at the top
+        nav_frame = ttk.Frame(self.current_track_frame)
+        nav_frame.pack(fill='x', padx=10, pady=5)
+        
+        self.prev_button = ttk.Button(
+            nav_frame,
+            text="← Previous",
+            command=self._show_previous_track,
+            bootstyle="secondary"
+        )
+        self.prev_button.pack(side='left', padx=5)
+        
+        self.next_button = ttk.Button(
+            nav_frame,
+            text="Next →",
+            command=self._show_next_track,
+            bootstyle="secondary"
+        )
+        self.next_button.pack(side='right', padx=5)
+        
+        # Album art frame
+        self.album_art_frame = ttk.Frame(self.current_track_frame)
+        self.album_art_frame.pack(pady=10)
+        
+        # Album art label (will hold the image)
+        self.album_art_label = ttk.Label(self.album_art_frame)
+        self.album_art_label.pack()
+        
+        # Track details grid
         track_grid = ttk.Frame(self.current_track_frame)
         track_grid.pack(padx=10, pady=5)
         
@@ -746,9 +777,58 @@ class MainWindow:
             self.current_track = None
             self._update_current_track_analysis()
 
+    def _show_previous_track(self):
+        """Show the previous track in the library"""
+        if not self.current_track:
+            return
+            
+        tracks = self.library.get_all_tracks()
+        try:
+            current_index = tracks.index(self.current_track)
+            if current_index > 0:
+                self.current_track = tracks[current_index - 1]
+                self._update_current_track_analysis()
+        except ValueError:
+            pass
+
+    def _show_next_track(self):
+        """Show the next track in the library"""
+        if not self.current_track:
+            return
+            
+        tracks = self.library.get_all_tracks()
+        try:
+            current_index = tracks.index(self.current_track)
+            if current_index < len(tracks) - 1:
+                self.current_track = tracks[current_index + 1]
+                self._update_current_track_analysis()
+        except ValueError:
+            pass
+
     def _update_current_track_analysis(self):
         """Update the current track analysis display"""
         if self.current_track:
+            # Update album art
+            if self.current_track.album_art_url:
+                try:
+                    # Download and display album art
+                    response = requests.get(self.current_track.album_art_url)
+                    img_data = response.content
+                    img = Image.open(io.BytesIO(img_data))
+                    
+                    # Resize to reasonable dimensions (e.g., 200x200)
+                    img = img.resize((200, 200), Image.Resampling.LANCZOS)
+                    
+                    # Keep reference to prevent garbage collection
+                    self.current_album_art = ImageTk.PhotoImage(img)
+                    self.album_art_label.config(image=self.current_album_art)
+                except Exception as e:
+                    print(f"Error loading album art: {e}")
+                    self.album_art_label.config(image='')
+            else:
+                self.album_art_label.config(image='')
+            
+            # Update track details
             self.track_values['Title:'].config(text=self.current_track.title)
             self.track_values['Artist:'].config(text=self.current_track.artist)
             self.track_values['Album:'].config(text=self.current_track.album or 'N/A')
@@ -757,7 +837,20 @@ class MainWindow:
             self.track_values['Time Signature:'].config(text=self.current_track.time_signature)
             self.track_values['Energy Level:'].config(text=str(self.current_track.energy_level or 'N/A'))
             self.track_values['Camelot Position:'].config(text=str(self.current_track.camelot_position or 'N/A'))
+            
+            # Update navigation buttons
+            tracks = self.library.get_all_tracks()
+            try:
+                current_index = tracks.index(self.current_track)
+                self.prev_button.config(state='normal' if current_index > 0 else 'disabled')
+                self.next_button.config(state='normal' if current_index < len(tracks) - 1 else 'disabled')
+            except ValueError:
+                self.prev_button.config(state='disabled')
+                self.next_button.config(state='disabled')
         else:
-            # Reset all values if no track is selected
+            # Reset everything if no track is selected
+            self.album_art_label.config(image='')
             for label in self.track_values.values():
-                label.config(text='N/A') 
+                label.config(text='N/A')
+            self.prev_button.config(state='disabled')
+            self.next_button.config(state='disabled') 

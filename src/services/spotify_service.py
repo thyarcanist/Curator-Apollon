@@ -263,7 +263,8 @@ class SpotifyService:
             camelot_position=self._get_camelot_position(audio_features['key'], 
                                                       audio_features['mode']),
             energy_level=audio_features['energy'],
-            spotify_url=f"https://open.spotify.com/track/{track_id}"
+            spotify_url=f"https://open.spotify.com/track/{track_id}",
+            album_art_url=track_info['album']['images'][0]['url'] if track_info['album']['images'] else None
         )
     
     def import_playlist(self, playlist_url: str) -> list[Track]:
@@ -306,7 +307,8 @@ class SpotifyService:
                                 energy_level=features['energy'],
                                 spotify_url=f"https://open.spotify.com/track/{track['id']}",
                                 album=track['album']['name'],
-                                time_signature=f"{features['time_signature']}/4"  # Spotify returns beats per bar
+                                time_signature=f"{features['time_signature']}/4",
+                                album_art_url=track['album']['images'][0]['url'] if track['album']['images'] else None
                             ))
                             print("✓ Imported with audio features")
                         else:
@@ -321,7 +323,8 @@ class SpotifyService:
                                 energy_level=0,
                                 spotify_url=f"https://open.spotify.com/track/{track['id']}",
                                 album=track['album']['name'],
-                                time_signature="4/4"  # Default to common time
+                                time_signature="4/4",
+                                album_art_url=None
                             ))
                             print("! Imported without audio features")
                     except Exception as e:
@@ -337,7 +340,8 @@ class SpotifyService:
                             energy_level=0,
                             spotify_url=f"https://open.spotify.com/track/{track['id']}",
                             album=track['album']['name'],
-                            time_signature="4/4"  # Default to common time
+                            time_signature="4/4",
+                            album_art_url=None
                         ))
                 
                 if not tracks:
