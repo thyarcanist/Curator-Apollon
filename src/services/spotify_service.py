@@ -11,45 +11,75 @@ class CustomSpotifyOAuth(SpotifyOAuth):
     def get_auth_response(self):
         auth_url = self.get_authorize_url()
         webbrowser.open(auth_url)
-        # Use tkinter dialog instead of input()
-        response = simpledialog.askstring(
+        
+        # Show instructions in a messagebox
+        messagebox.showinfo(
             "Spotify Authentication",
-            "Please paste the URL you were redirected to:",
-            initialvalue="https://apollon.occybyte.com/callback?code="
+            "1. A browser window will open for Spotify login\n"
+            "2. After authorizing, you'll see an error page\n"
+            "3. Copy the ENTIRE URL from your browser's address bar\n"
+            "4. Paste it in the next dialog"
         )
-        return response
+        
+        while True:
+            response = simpledialog.askstring(
+                "Spotify Authentication",
+                "Please paste the FULL URL from your browser:",
+                initialvalue="https://apollon.occybyte.com/callback?code="
+            )
+            
+            if response is None:  # User clicked Cancel
+                raise Exception("Authentication cancelled by user")
+            
+            # Try to extract the code from the URL
+            try:
+                code = re.search(r'code=([^&]+)', response).group(1)
+                return code
+            except:
+                messagebox.showerror(
+                    "Invalid URL", 
+                    "Please paste the complete URL from your browser.\n"
+                    "It should start with 'https://apollon.occybyte.com/callback?code='"
+                )
 
 class SpotifyService:
     def __init__(self):
         self.sp = None
         self.auth_manager = None
         self._setup_cache()
-        
+    
     def _setup_cache(self):
-        """Setup cache directory for Spotify tokens"""
         self.cache_dir = Path.home() / '.cache' / 'apollon'
         self.cache_dir.mkdir(parents=True, exist_ok=True)
         self.cache_path = self.cache_dir / 'spotify_token.cache'
     
     def ensure_authenticated(self):
-        """Ensure Spotify client is authenticated"""
         if self.sp is None:
             try:
                 self.auth_manager = CustomSpotifyOAuth(
                     client_id="55c875d209d94fdf963a31243f5d6fdb",
                     client_secret="cf4f384ddf3c46c49e8ca8d15d3b71ba",
                     redirect_uri="https://apollon.occybyte.com/callback",
-                    scope="user-library-read playlist-read-private",
+                    # Updated scopes to include all needed permissions
+                    scope=" ".join([
+                        "user-library-read",
+                        "playlist-read-private",
+                        "playlist-read-collaborative",
+                        "user-read-private",
+                        "user-read-email"
+                    ]),
                     cache_path=str(self.cache_path),
-                    open_browser=False  # We'll handle browser opening ourselves
+                    open_browser=False
                 )
+                
                 self.sp = spotipy.Spotify(auth_manager=self.auth_manager)
                 # Test the connection
                 self.sp.current_user()
+                
             except Exception as e:
                 if self.cache_path.exists():
                     self.cache_path.unlink()
-                raise Exception(f"Failed to authenticate with Spotify: {str(e)}\nPlease try again.")
+                raise Exception(f"Authentication failed: {str(e)}")
     
     def get_track_info(self, spotify_url: str) -> Track:
         """Get track info from Spotify URL"""
@@ -82,10 +112,18 @@ class SpotifyService:
         """Import tracks from a Spotify playlist URL"""
         self.ensure_authenticated()
         try:
-            # Extract playlist ID from various Spotify URL formats
             playlist_id = self._extract_spotify_id(playlist_url)
             if not playlist_id:
                 raise ValueError("Invalid Spotify playlist URL format")
+            
+            # Get playlist details first
+            playlist = self.sp.playlist(playlist_id)
+            if not playlist:
+                raise ValueError("Could not find playlist")
+                
+            messagebox.showinfo("Import Status", 
+                              f"Found playlist: {playlist['name']}\n"
+                              f"Importing {playlist['tracks']['total']} tracks...")
             
             tracks = []
             results = self.sp.playlist_tracks(playlist_id)
@@ -93,13 +131,16 @@ class SpotifyService:
             while results:
                 for item in results['items']:
                     try:
-                        if not item['track']:  # Skip any None tracks or local files
+                        if not item['track']:
                             continue
                             
                         track = item['track']
-                        audio_features = self.sp.audio_features(track['id'])
                         
-                        if not audio_features or not audio_features[0]:  # Skip tracks without audio features
+                        # Get audio features in batches
+                        audio_features = self.sp.audio_features([track['id']])
+                        
+                        if not audio_features or not audio_features[0]:
+                            print(f"No audio features for track: {track['name']}")
                             continue
                         
                         audio_feature = audio_features[0]
@@ -115,8 +156,9 @@ class SpotifyService:
                             energy_level=audio_feature['energy'],
                             spotify_url=f"https://open.spotify.com/track/{track['id']}"
                         ))
+                        
                     except Exception as e:
-                        print(f"Error processing track: {str(e)}")
+                        print(f"Error processing track {track.get('name', 'Unknown')}: {str(e)}")
                         continue
                 
                 # Get next page of results if available
@@ -124,8 +166,12 @@ class SpotifyService:
                     results = self.sp.next(results)
                 else:
                     results = None
-                    
+            
+            if not tracks:
+                raise Exception("No tracks could be imported. Please check the playlist URL and permissions.")
+                
             return tracks
+            
         except Exception as e:
             raise Exception(f"Playlist import failed: {str(e)}")
     

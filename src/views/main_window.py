@@ -186,12 +186,24 @@ class MainWindow:
                     "After authorizing, you will be redirected to apollon.occybyte.com.\n\n"
                     "Copy the FULL URL from your browser and paste it in the next dialog."
                 )
+                
                 url = url_entry.get()
+                if not url:
+                    messagebox.showerror("Error", "Please enter a playlist URL")
+                    return
+                    
                 tracks = self.spotify_service.import_playlist(url)
-                for track in tracks:
-                    self.library.add_track(track)
-                dialog.destroy()
-                messagebox.showinfo("Success", f"Imported {len(tracks)} tracks")
+                
+                if tracks:
+                    for track in tracks:
+                        self.library.add_track(track)
+                    dialog.destroy()
+                    messagebox.showinfo("Success", 
+                                      f"Successfully imported {len(tracks)} tracks\n\n"
+                                      f"First track: {tracks[0].title} by {tracks[0].artist}")
+                else:
+                    messagebox.showerror("Error", "No tracks were imported")
+                    
             except Exception as e:
                 messagebox.showerror("Error", str(e))
         
