@@ -60,21 +60,24 @@ class SpotifyService:
                     client_id="55c875d209d94fdf963a31243f5d6fdb",
                     client_secret="cf4f384ddf3c46c49e8ca8d15d3b71ba",
                     redirect_uri="https://apollon.occybyte.com/callback",
-                    # Updated scopes to include all needed permissions
+                    # Updated scopes with all necessary permissions
                     scope=" ".join([
                         "user-library-read",
                         "playlist-read-private",
                         "playlist-read-collaborative",
                         "user-read-private",
-                        "user-read-email"
+                        "user-read-email",
+                        "user-read-playback-state",
+                        "user-read-currently-playing",
+                        "user-read-playback-position",
+                        "streaming"
                     ]),
                     cache_path=str(self.cache_path),
                     open_browser=False
                 )
                 
                 self.sp = spotipy.Spotify(auth_manager=self.auth_manager)
-                # Test the connection
-                self.sp.current_user()
+                self.sp.current_user()  # Test connection
                 
             except Exception as e:
                 if self.cache_path.exists():
@@ -129,37 +132,39 @@ class SpotifyService:
             results = self.sp.playlist_tracks(playlist_id)
             
             while results:
+                batch_tracks = []
+                batch_ids = []
+                
+                # Collect track IDs in batches
                 for item in results['items']:
+                    if item['track'] and not item['track'].get('is_local', False):
+                        batch_tracks.append(item['track'])
+                        batch_ids.append(item['track']['id'])
+                
+                if batch_ids:
                     try:
-                        if not item['track']:
-                            continue
-                            
-                        track = item['track']
+                        # Get audio features for the batch
+                        audio_features = self.sp.audio_features(batch_ids)
                         
-                        # Get audio features in batches
-                        audio_features = self.sp.audio_features([track['id']])
-                        
-                        if not audio_features or not audio_features[0]:
-                            print(f"No audio features for track: {track['name']}")
-                            continue
-                        
-                        audio_feature = audio_features[0]
-                        
-                        tracks.append(Track(
-                            id=track['id'],
-                            title=track['name'],
-                            artist=track['artists'][0]['name'],
-                            bpm=audio_feature['tempo'],
-                            key=self._convert_key(audio_feature['key'], audio_feature['mode']),
-                            camelot_position=self._get_camelot_position(audio_feature['key'], 
-                                                                      audio_feature['mode']),
-                            energy_level=audio_feature['energy'],
-                            spotify_url=f"https://open.spotify.com/track/{track['id']}"
-                        ))
-                        
+                        # Process each track with its audio features
+                        for track, features in zip(batch_tracks, audio_features):
+                            if features:  # Only add if we have audio features
+                                tracks.append(Track(
+                                    id=track['id'],
+                                    title=track['name'],
+                                    artist=track['artists'][0]['name'],
+                                    bpm=features['tempo'],
+                                    key=self._convert_key(features['key'], features['mode']),
+                                    camelot_position=self._get_camelot_position(features['key'], 
+                                                                              features['mode']),
+                                    energy_level=features['energy'],
+                                    spotify_url=f"https://open.spotify.com/track/{track['id']}"
+                                ))
+                            else:
+                                print(f"No audio features available for track: {track['name']}")
+                                
                     except Exception as e:
-                        print(f"Error processing track {track.get('name', 'Unknown')}: {str(e)}")
-                        continue
+                        print(f"Error getting audio features for batch: {str(e)}")
                 
                 # Get next page of results if available
                 if results['next']:
