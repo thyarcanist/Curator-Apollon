@@ -231,7 +231,7 @@ class SpotifyService:
                 if self.cache_path.exists():
                     print("Removing invalid cache file...")
                     self.cache_path.unlink()
-                raise
+                raise Exception(f"Failed to initialize Spotify client: {str(e)}")
                 
         except Exception as e:
             raise Exception(f"Failed to initialize Spotify client: {str(e)}")
