@@ -490,64 +490,21 @@ class MainWindow:
                   command=save_manual_track).pack(pady=20)
     
     def _import_playlist_dialog(self):
-        """Open dialog for importing a Spotify playlist"""
-        dialog = ttk.Toplevel(self.root)
-        dialog.title("Import Spotify Playlist")
-        dialog.geometry("500x200")
+        """Show dialog to import a Spotify playlist"""
+        dialog = ImportPlaylistDialog(self.root, self.spotify_service)
         
-        # Status label
-        status_label = ttk.Label(dialog, text="Checking authentication status...")
-        status_label.pack(pady=5)
-        
-        def check_auth():
-            status_label.config(text="Testing authentication...")
-            dialog.update()
+        if dialog.result:
+            def on_import_complete(tracks):
+                if tracks:
+                    self.library.add_tracks(tracks)
+                    self._update_analysis()
+                    self.set_status(f"Imported {len(tracks)} tracks")
+                else:
+                    self.set_status("Import failed - no tracks found")
             
-            if self.spotify_service.debug_auth():
-                status_label.config(text="Authentication successful!")
-                Messagebox.show_info(
-                    message="Successfully authenticated with Spotify!",
-                    title="Authentication Success"
-                )
-            else:
-                status_label.config(text="Authentication failed - check console for details")
-                Messagebox.show_error(
-                    message="Authentication failed.\nPlease check the console for error details.",
-                    title="Authentication Error"
-                )
-        
-        ttk.Button(dialog, text="Check Auth", 
-                  bootstyle="info",
-                  command=check_auth).pack(pady=5)
-        
-        ttk.Label(dialog, text="Enter Spotify Playlist URL:").pack(pady=5)
-        url_entry = ttk.Entry(dialog, width=50)
-        url_entry.pack(fill='x', padx=20)
-        
-        def handle_import():
-            try:
-                url = url_entry.get()
-                if not url:
-                    Messagebox.show_error(
-                        message="Please enter a playlist URL",
-                        title="Error"
-                    )
-                    return
-                
-                self.set_status("Importing playlist...")
-                self.current_playlist_url = url
-                self._import_playlist()
-                
-            except Exception as e:
-                self.set_status(f"Import error: {str(e)}")
-                Messagebox.show_error(
-                    message=str(e),
-                    title="Error"
-                )
-        
-        ttk.Button(dialog, text="Import", 
-                  bootstyle="primary-outline",
-                  command=handle_import).pack(pady=20)
+            self.set_status("Importing playlist...")
+            self.current_playlist_url = dialog.result
+            self.spotify_service.import_playlist_async(dialog.result, callback=on_import_complete)
     
     def _remove_selected(self):
         """Remove selected tracks from the library"""
@@ -940,25 +897,6 @@ class MainWindow:
             self.prev_button.config(state='disabled')
             self.next_button.config(state='disabled')
 
-    def _import_playlist(self):
-        """Import a playlist from Spotify URL"""
-        url = self.current_playlist_url
-        if not url:
-            Messagebox.show_error(
-                "Please enter a Spotify playlist URL",
-                "Import Error"
-            )
-            return
-        
-        def on_import_complete(tracks):
-            self.library.add_tracks(tracks)
-            self._update_analysis()
-            self.status_bar.config(text=f"Imported {len(tracks)} tracks")
-            
-        # Start import in background
-        self.spotify_service.import_playlist_async(url, callback=on_import_complete)
-        self.status_bar.config(text="Importing playlist...") 
-
     def _update_analysis(self):
         """Update all analysis displays"""
         try:
@@ -1242,6 +1180,103 @@ class MainWindow:
             self.musical_values['Time Signatures:'].config(text=", ".join(sig_display))
         else:
             self.musical_values['Time Signatures:'].config(text="N/A")
+
+class ImportPlaylistDialog(ttk.Toplevel):
+    """Custom dialog for importing playlists with proper sizing"""
+    def __init__(self, parent, spotify_service, **kwargs):
+        super().__init__(parent, **kwargs)
+        
+        self.title("Import Spotify Playlist")
+        self.spotify_service = spotify_service
+        self.result = None
+        
+        # Make dialog modal
+        self.transient(parent)
+        self.grab_set()
+        
+        # Configure grid
+        self.grid_columnconfigure(0, weight=1)
+        
+        # Status label
+        self.status_label = ttk.Label(
+            self,
+            text="Checking authentication status...",
+            foreground="gold",
+            justify="center"
+        )
+        self.status_label.grid(row=0, column=0, padx=20, pady=10, sticky='ew')
+        
+        # Auth button
+        self.auth_button = ttk.Button(
+            self,
+            text="Check Auth",
+            bootstyle="info",
+            command=self._check_auth,
+            width=15  # Make button wider
+        )
+        self.auth_button.grid(row=1, column=0, pady=10)
+        
+        # URL entry section
+        url_frame = ttk.Frame(self)
+        url_frame.grid(row=2, column=0, padx=20, pady=10, sticky='ew')
+        url_frame.grid_columnconfigure(0, weight=1)
+        
+        ttk.Label(
+            url_frame,
+            text="Enter Spotify Playlist URL:",
+            foreground="gold"
+        ).grid(row=0, column=0, pady=(0, 5), sticky='w')
+        
+        self.url_var = ttk.StringVar()
+        self.url_entry = ttk.Entry(
+            url_frame,
+            textvariable=self.url_var,
+            width=50  # Make entry wider
+        )
+        self.url_entry.grid(row=1, column=0, sticky='ew')
+        
+        # Import button
+        self.import_button = ttk.Button(
+            self,
+            text="Import",
+            bootstyle="primary",
+            command=self._on_import,
+            width=15,  # Make button wider
+            state='disabled'  # Start disabled until auth check
+        )
+        self.import_button.grid(row=3, column=0, pady=20)
+        
+        # Set dialog size and position
+        self.update_idletasks()
+        width = 500  # Fixed width
+        height = 200  # Fixed height
+        
+        x = parent.winfo_rootx() + (parent.winfo_width() - width) // 2
+        y = parent.winfo_rooty() + (parent.winfo_height() - height) // 2
+        
+        self.geometry(f"{width}x{height}+{x}+{y}")
+        self.minsize(width, height)
+        
+        # Start auth check
+        self.after(100, self._check_auth)
+    
+    def _check_auth(self):
+        """Check Spotify authentication status"""
+        try:
+            self.spotify_service.ensure_authenticated()
+            self.status_label.config(text="Authentication successful!")
+            self.auth_button.config(state='disabled')
+            self.import_button.config(state='normal')
+            self.url_entry.focus_set()
+        except Exception as e:
+            self.status_label.config(text="Authentication failed. Please try again.")
+            self.auth_button.config(state='normal')
+            self.import_button.config(state='disabled')
+    
+    def _on_import(self):
+        """Handle import button click"""
+        self.result = self.url_var.get()
+        self.destroy()
 
 class ScaledMessageDialog(ttk.Toplevel):
     """Custom dialog with uniform sizing and proper text scaling"""
