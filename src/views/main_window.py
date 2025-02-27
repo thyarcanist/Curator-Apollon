@@ -236,6 +236,16 @@ class MainWindow:
         dialog.title("Import Spotify Playlist")
         dialog.geometry("500x150")
         
+        # Add debug button
+        def check_auth():
+            if self.spotify_service.debug_auth():
+                messagebox.showinfo("Debug", "Authentication successful!")
+            else:
+                messagebox.showerror("Debug", "Authentication failed!")
+        
+        ttk.Button(dialog, text="Check Auth", 
+                  command=check_auth).pack(pady=5)
+        
         ttk.Label(dialog, text="Enter Spotify Playlist URL:").pack(pady=5)
         url_entry = ttk.Entry(dialog, width=50)
         url_entry.pack(fill='x', padx=20)

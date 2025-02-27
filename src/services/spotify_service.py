@@ -242,7 +242,7 @@ class SpotifyService:
     
     def import_playlist(self, playlist_url: str) -> list[Track]:
         """Import tracks from a Spotify playlist URL"""
-        self.ensure_authenticated()  # Use OAuth flow instead of client credentials
+        self.ensure_authenticated()
         try:
             playlist_id = self._extract_spotify_id(playlist_url)
             if not playlist_id:
@@ -250,45 +250,45 @@ class SpotifyService:
             
             print(f"Attempting to access playlist with ID: {playlist_id}")
             
-            # Get playlist using spotipy with OAuth
+            # First just try to get basic playlist info
             try:
-                playlist = self.sp.playlist(
-                    playlist_id,
-                    fields="name,tracks.items(track(id,name,artists(name),album(name)))",
-                    market="US"
-                )
-                
-                if not playlist:
-                    raise ValueError("Could not find playlist")
-                    
-                print(f"Successfully accessed playlist: {playlist['name']}")
+                # Get the playlist without any field filtering first
+                playlist = self.sp.playlist(playlist_id)
+                print(f"Found playlist: {playlist['name']}")
                 
                 tracks = []
-                for item in playlist['tracks']['items']:
-                    if not item['track']:
+                items = playlist['tracks']['items']
+                
+                for item in items:
+                    if not item['track'] or item['track'].get('is_local', False):
                         continue
-                        
-                    track = item['track']
                     
-                    # Get audio features in batches
-                    features = self.sp.audio_features([track['id']])[0]
-                    if features:
-                        tracks.append(Track(
-                            id=track['id'],
-                            title=track['name'],
-                            artist=track['artists'][0]['name'],
-                            bpm=features['tempo'],
-                            key=self._convert_key(features['key'], features['mode']),
-                            camelot_position=self._get_camelot_position(
-                                features['key'], features['mode']
-                            ),
-                            energy_level=features['energy']
-                        ))
-                        print(f"Imported: {track['name']}")
+                    track = item['track']
+                    print(f"Processing track: {track['name']}")
+                    
+                    # Get audio features one at a time to debug
+                    try:
+                        features = self.sp.audio_features([track['id']])[0]
+                        if features:
+                            tracks.append(Track(
+                                id=track['id'],
+                                title=track['name'],
+                                artist=track['artists'][0]['name'],
+                                bpm=features['tempo'],
+                                key=self._convert_key(features['key'], features['mode']),
+                                camelot_position=self._get_camelot_position(
+                                    features['key'], features['mode']
+                                ),
+                                energy_level=features['energy']
+                            ))
+                            print(f"Successfully imported: {track['name']}")
+                    except Exception as e:
+                        print(f"Error getting features for track {track['name']}: {str(e)}")
+                        continue
                 
                 if not tracks:
                     raise Exception("No tracks could be imported")
-                    
+                
                 return tracks
                 
             except Exception as e:
@@ -415,4 +415,29 @@ class SpotifyService:
             
         except Exception as e:
             print(f"API test error: {str(e)}")
+            return False 
+
+    def debug_auth(self):
+        """Debug authentication status"""
+        try:
+            if not self.sp:
+                print("No Spotify client initialized")
+                return False
+            
+            # Try to get current user info
+            try:
+                me = self.sp.me()
+                print(f"Authenticated as: {me['display_name']} ({me['id']})")
+                
+                # Try to get a known public playlist
+                playlist = self.sp.playlist("37i9dQZF1DXcBWIGoYBM5M")
+                print(f"Successfully accessed test playlist: {playlist['name']}")
+                
+                return True
+            except Exception as e:
+                print(f"API test failed: {str(e)}")
+                return False
+            
+        except Exception as e:
+            print(f"Debug error: {str(e)}")
             return False 
