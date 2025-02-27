@@ -265,22 +265,24 @@ class MainWindow:
         musical_stats.pack(fill='x', padx=10, pady=10)
         
         musical_labels = [
-            ('Average BPM:', '0'),
-            ('Average Key:', 'N/A'),
-            ('Max BPM:', '0'),
-            ('Min BPM:', '0'),
-            ('Most Common Key:', 'N/A'),
-            ('Key Distribution:', 'N/A'),
+            ('Average BPM:', 'N/A'),
+            ('BPM Range:', 'N/A'),
+            ('Tracks with BPM:', 'N/A'),
+            ('Common Keys:', 'N/A'),
+            ('Tracks with Key:', 'N/A'),
+            ('Average Energy:', 'N/A'),
+            ('Tracks with Energy:', 'N/A'),
+            ('Common Camelot:', 'N/A'),
+            ('Tracks with Camelot:', 'N/A'),
             ('Time Signatures:', 'N/A'),
-            ('Common Time Songs:', '0'),
-            ('Odd Time Songs:', '0')
+            ('Tracks with Time Sig:', 'N/A')
         ]
         
         self.musical_values = {}
-        for i, (label, default) in enumerate(musical_labels):
-            ttk.Label(musical_stats, text=label).grid(row=i, column=0, sticky='e', padx=5, pady=2)
+        for label, default in musical_labels:
+            ttk.Label(musical_stats, text=label).pack(anchor='w', padx=10, pady=2)
             value_label = ttk.Label(musical_stats, text=default)
-            value_label.grid(row=i, column=1, sticky='w', padx=5, pady=2)
+            value_label.pack(anchor='w', padx=20, pady=2)
             self.musical_values[label] = value_label
         
         # Literary Statistics Section (with padding)
@@ -312,12 +314,13 @@ class MainWindow:
             self.literary_values[label] = value_label
         
         # Refresh button
-        ttk.Button(
+        self.refresh_button = ttk.Button(
             playlist_stats,
             text="Refresh Statistics",
-            command=self._update_playlist_stats,
+            command=self._update_analysis,
             bootstyle="secondary"
-        ).pack(pady=10)
+        )
+        self.refresh_button.pack(pady=10)
 
     def _setup_discovery_view(self):
         # Entropy slider
@@ -352,15 +355,19 @@ class MainWindow:
                         values=(
                             track.title,
                             track.artist,
-                            f"{track.bpm:.0f}" if track.bpm else "N/A",
-                            track.key or "N/A"
+                            f"{track.bpm:.0f}" if track.bpm and track.bpm > 0 else "N/A",
+                            track.key if track.key != "Unknown" else "N/A"
                         )
                     )
                 except Exception as e:
                     print(f"Error adding track to display: {e}")
             
             # Update analysis
-            self._update_analysis()
+            try:
+                self._update_analysis()
+            except Exception as e:
+                print(f"Error updating analysis: {e}")
+                self.set_status("Error updating analysis display")
             
         except Exception as e:
             print(f"Error updating track list: {e}")
@@ -593,8 +600,14 @@ class MainWindow:
             max_bpm = max(bpms)
             min_bpm = min(bpms)
             self.musical_values['Average BPM:'].config(text=f"{avg_bpm:.1f}")
-            self.musical_values['Max BPM:'].config(text=f"{max_bpm:.1f}")
-            self.musical_values['Min BPM:'].config(text=f"{min_bpm:.1f}")
+            self.musical_values['BPM Range:'].config(text=f"{min_bpm:.1f} - {max_bpm:.1f}")
+            self.musical_values['Tracks with BPM:'].config(
+                text=f"{len(bpms)}/{len(tracks)} ({(len(bpms)/len(tracks))*100:.1f}%)"
+            )
+        else:
+            self.musical_values['Average BPM:'].config(text="N/A")
+            self.musical_values['BPM Range:'].config(text="N/A")
+            self.musical_values['Tracks with BPM:'].config(text="0/0 (0%)")
         
         # Calculate Literary Stats
         artists = [t.artist for t in tracks]
@@ -774,14 +787,12 @@ class MainWindow:
             self.musical_values['Time Signatures:'].config(
                 text=f"{', '.join(sig_display)}"
             )
-            self.musical_values['Common Time Songs:'].config(
-                text=f"{common_time} ({(common_time/len(tracks))*100:.1f}%)"
+            self.musical_values['Tracks with Time Sig:'].config(
+                text=f"{sum(time_sigs.values())}/{len(tracks)} ({(sum(time_sigs.values())/len(tracks))*100:.1f}%)"
             )
-            self.musical_values['Odd Time Songs:'].config(
-                text=f"{odd_time} ({(odd_time/len(tracks))*100:.1f}%)"
-            )
-        
-        self.set_status("Statistics updated")
+        else:
+            self.musical_values['Time Signatures:'].config(text="N/A")
+            self.musical_values['Tracks with Time Sig:'].config(text="0/0 (0%)") 
 
     def _reset_stats(self):
         """Reset all statistics to default values"""
@@ -915,15 +926,19 @@ class MainWindow:
 
     def _update_analysis(self):
         """Update all analysis displays"""
-        tracks = self.library.get_all_tracks()
-        if tracks:
-            # Update musical analysis
-            self._update_musical_analysis(tracks)
-            # Update literary analysis
-            self._update_literary_analysis(tracks)
-            self.set_status(f"Analysis updated for {len(tracks)} tracks")
-        else:
-            self._reset_stats() 
+        try:
+            tracks = self.library.get_all_tracks()
+            if tracks:
+                # Update musical analysis
+                self._update_musical_analysis(tracks)
+                # Update literary analysis
+                self._update_literary_analysis(tracks)
+                self.set_status(f"Analysis updated for {len(tracks)} tracks")
+            else:
+                self._reset_stats()
+        except Exception as e:
+            print(f"Error updating analysis: {e}")
+            self.set_status("Error updating analysis")
 
     def _update_musical_analysis(self, tracks: List[Track]):
         """Update musical analysis with handling for missing features"""
