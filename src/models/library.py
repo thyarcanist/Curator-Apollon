@@ -11,6 +11,7 @@ class Track:
     camelot_position: str
     energy_level: float
     spotify_url: str = None
+    album: str = None
 
 class MusicLibrary:
     def __init__(self):

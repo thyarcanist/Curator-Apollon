@@ -7,6 +7,10 @@ from models.library import MusicLibrary, Track
 from services.spotify_service import SpotifyService
 from services.analysis_service import AnalysisService
 from tkinter import filedialog
+from pathlib import Path
+import tkinter.font as tkFont
+from PIL import Image, ImageTk
+import os
 
 class MainWindow:
     def __init__(self, root, library: MusicLibrary, 
@@ -16,6 +20,20 @@ class MainWindow:
         self.library = library
         self.spotify_service = spotify_service
         self.analysis_service = analysis_service
+        self.current_playlist_url = None
+        
+        # Load custom font
+        font_path = Path(__file__).parent.parent / "appearance" / "fonts" / "CommitMono VariableFont.woff2"
+        self.root.tk.call('font', 'create', 'CommitMono')
+        self.root.tk.call('font', 'configure', 'CommitMono', '-family', str(font_path))
+        
+        # Set window icon (fixed)
+        icon_path = Path(__file__).parent.parent / "appearance" / "img" / "laurel-circlet.png"
+        if icon_path.exists():
+            # Keep reference to prevent garbage collection
+            self.icon_image = Image.open(icon_path)
+            self.icon_photo = ImageTk.PhotoImage(self.icon_image)
+            self.root.iconphoto(True, self.icon_photo)
         
         # Custom theme colors
         self.style = ttk.Style(theme="darkly")
@@ -29,24 +47,25 @@ class MainWindow:
             'white': '#FFFFFF'
         }
         
-        # Configure custom styles
+        # Configure custom styles with new font
         self.style.configure("Treeview",
             background=COLORS['dark_grey'],
             foreground=COLORS['gold'],
             fieldbackground=COLORS['dark_grey'],
             rowheight=25,
-            font=('Segoe UI', 10)
+            font='CommitMono 10'
         )
         
         self.style.configure("TButton",
-            font=('Segoe UI', 10),
+            font='CommitMono 10',
             background=COLORS['black'],
             foreground=COLORS['gold']
         )
         
         self.style.configure("TLabel",
             background=COLORS['dark_grey'],
-            foreground=COLORS['gold']
+            foreground=COLORS['gold'],
+            font='CommitMono 10'
         )
         
         self.style.configure("TFrame",
@@ -63,6 +82,16 @@ class MainWindow:
             foreground=COLORS['gold'],
             padding=[10, 5]
         )
+        
+        # Add status bar at the bottom
+        self.status_bar = ttk.Label(
+            self.root,
+            text="Ready",
+            font='CommitMono 8',
+            relief="sunken",
+            padding=(5, 2)
+        )
+        self.status_bar.pack(side="bottom", fill="x")
         
         self._setup_ui()
         self.library.add_observer(self)
@@ -122,13 +151,16 @@ class MainWindow:
         ttk.Button(controls, text='Remove Selected', 
                   bootstyle="danger",
                   command=self._remove_selected).pack(side='left', padx=5)
+        ttk.Button(controls, text='Remove All', 
+                  bootstyle="danger",
+                  command=self._remove_all).pack(side='left', padx=5)
         
-        # Add export button
+        # Export button
         self.export_button = ttk.Button(
             controls,
             text="Export Playlist",
             command=self.export_playlist,
-            style="Secondary.TButton"
+            bootstyle="secondary"
         )
         self.export_button.pack(side="left", padx=5)
     
@@ -244,7 +276,7 @@ class MainWindow:
         """Open dialog for importing a Spotify playlist"""
         dialog = ttk.Toplevel(self.root)
         dialog.title("Import Spotify Playlist")
-        dialog.geometry("500x200")  # Made taller for debug info
+        dialog.geometry("500x200")
         
         # Status label
         status_label = ttk.Label(dialog, text="Checking authentication status...")
@@ -277,13 +309,6 @@ class MainWindow:
         
         def handle_import():
             try:
-                # Show authentication instructions
-                Messagebox.show_info(
-                    message="You will be redirected to Spotify to authenticate.\n\n"
-                           "After authorizing, the import will proceed automatically.",
-                    title="Spotify Authentication"
-                )
-                
                 url = url_entry.get()
                 if not url:
                     Messagebox.show_error(
@@ -291,25 +316,29 @@ class MainWindow:
                         title="Error"
                     )
                     return
-                    
+                
+                self.set_status("Importing playlist...")
+                self.current_playlist_url = url
                 tracks = self.spotify_service.import_playlist(url)
                 
                 if tracks:
                     for track in tracks:
                         self.library.add_track(track)
                     dialog.destroy()
+                    self.set_status(f"Successfully imported {len(tracks)} tracks")
                     Messagebox.show_info(
-                        message=f"Successfully imported {len(tracks)} tracks\n\n"
-                                f"First track: {tracks[0].title} by {tracks[0].artist}",
+                        message=f"Successfully imported {len(tracks)} tracks",
                         title="Success"
                     )
                 else:
+                    self.set_status("Import failed - no tracks found")
                     Messagebox.show_error(
                         message="No tracks were imported",
                         title="Error"
                     )
                     
             except Exception as e:
+                self.set_status(f"Import error: {str(e)}")
                 Messagebox.show_error(
                     message=str(e),
                     title="Error"
@@ -330,6 +359,37 @@ class MainWindow:
                     self.library.remove_track(track.id)
                     break 
 
+    def _remove_all(self):
+        """Remove all tracks from the library"""
+        if len(self.library.get_all_tracks()) == 0:
+            Messagebox.show_info(
+                "No Tracks",
+                "Library is already empty."
+            )
+            return
+            
+        # Ask for confirmation
+        confirm = Messagebox.show_question(
+            "Remove All Tracks",
+            "Are you sure you want to remove all tracks from the library?",
+            buttons=['Yes:danger', 'No:secondary']
+        )
+        
+        if confirm == 'Yes':
+            self.set_status("Removing all tracks...")
+            # Get all track IDs and remove them
+            for track in self.library.get_all_tracks():
+                self.library.remove_track(track.id)
+            
+            # Reset current playlist URL since we cleared everything
+            self.current_playlist_url = None
+            
+            self.set_status("All tracks removed")
+            Messagebox.show_info(
+                "Success",
+                "All tracks have been removed from the library."
+            )
+
     def export_playlist(self):
         """Handle playlist export"""
         if not self.current_playlist_url:
@@ -339,7 +399,7 @@ class MainWindow:
             )
             return
             
-        # Ask user for save location
+        self.set_status("Selecting export location...")
         file_path = filedialog.asksaveasfilename(
             defaultextension=".txt",
             filetypes=[("Text files", "*.txt"), ("All files", "*.*")],
@@ -348,13 +408,21 @@ class MainWindow:
         )
         
         if file_path:
+            self.set_status("Exporting playlist...")
             if self.spotify_service.export_playlist_to_txt(self.current_playlist_url, file_path):
+                self.set_status(f"Playlist exported to {file_path}")
                 Messagebox.show_info(
                     "Export Successful",
                     f"Playlist has been exported to:\n{file_path}"
                 )
             else:
+                self.set_status("Export failed")
                 Messagebox.show_error(
                     "Export Failed",
                     "Failed to export playlist. Please check the logs for details."
-                ) 
+                )
+
+    def set_status(self, message: str):
+        """Update status bar message"""
+        self.status_bar.config(text=message)
+        self.root.update() 

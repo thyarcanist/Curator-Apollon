@@ -6,6 +6,7 @@ from models.library import MusicLibrary
 from views.main_window import MainWindow
 from services.spotify_service import SpotifyService
 from services.analysis_service import AnalysisService
+from pathlib import Path
 
 class CuratorApollon:
     def __init__(self):
@@ -16,22 +17,9 @@ class CuratorApollon:
         )
         
         # Set window icon
-        icon_path = os.path.join(os.path.dirname(__file__), "img", "laurel-circlet.png")
-        if os.path.exists(icon_path):
-            try:
-                # Create PhotoImage from PNG
-                icon = Image.open(icon_path)
-                # Convert to RGBA if not already
-                icon = icon.convert('RGBA')
-                # Resize for Windows taskbar
-                icon = icon.resize((32, 32), Image.Resampling.LANCZOS)
-                photo = ImageTk.PhotoImage(icon)
-                # Set icon
-                self.root.iconphoto(True, photo)
-                # Keep reference
-                self.icon_photo = photo
-            except Exception as e:
-                print(f"Warning: Could not set window icon: {str(e)}")
+        icon_path = Path(__file__).parent / "appearance" / "img" / "apollon.ico"
+        if icon_path.exists():
+            self.root.iconbitmap(default=str(icon_path))
         
         # Initialize services and views
         self.library = MusicLibrary()
@@ -44,6 +32,22 @@ class CuratorApollon:
     def run(self):
         self.root.mainloop()
 
+def main():
+    root = ttk.Window(themename="darkly")
+    root.title("Curator Apollon")
+    root.geometry("1200x800")
+    
+    # Set window icon
+    icon_path = Path(__file__).parent / "appearance" / "img" / "apollon.ico"
+    if icon_path.exists():
+        root.iconbitmap(default=str(icon_path))
+    
+    library = MusicLibrary()
+    spotify_service = SpotifyService()
+    analysis_service = AnalysisService()
+    
+    app = MainWindow(root, library, spotify_service, analysis_service)
+    root.mainloop()
+
 if __name__ == "__main__":
-    app = CuratorApollon()
-    app.run() 
+    main() 
