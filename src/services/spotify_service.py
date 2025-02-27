@@ -232,9 +232,6 @@ class SpotifyService:
                     print("Removing invalid cache file...")
                     self.cache_path.unlink()
                 raise Exception(f"Failed to initialize Spotify client: {str(e)}")
-                
-        except Exception as e:
-            raise Exception(f"Failed to initialize Spotify client: {str(e)}")
     
     def get_track_info(self, spotify_url: str) -> Track:
         """Get track info from Spotify URL"""
@@ -474,3 +471,22 @@ class SpotifyService:
             print(f"✗ Debug error: {str(e)}")
             print("=== Authentication Debug Failed ===\n")
             return False 
+
+    def get_playlist_tracks(self, playlist_id):
+        """
+        Get all tracks from a playlist
+        Args:
+            playlist_id: The Spotify playlist ID
+        Returns:
+            List of track objects
+        """
+        try:
+            results = self.sp.playlist_tracks(playlist_id)
+            tracks = results['items']
+            while results['next']:
+                results = self.sp.next(results)
+                tracks.extend(results['items'])
+            return tracks
+        except Exception as e:
+            print(f"Error getting playlist tracks: {e}")
+            return [] 
