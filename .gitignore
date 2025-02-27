@@ -1,7 +1,3 @@
-src/views/__pycache__/
-src/services/__pycache__/analysis_service.cpython-310.pyc
-src/services/__pycache__/spotify_service.cpython-310.pyc
-src/views/__pycache__/main_window.cpython-310.pyc
-src/views/__pycache__/main_window.cpython-310.pyc
+/src/views/__pycache__/
 /src/views/__pycache__
 /src/models/__pycache__
