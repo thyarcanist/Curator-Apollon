@@ -140,10 +140,10 @@ class SpotifyService:
         # Get the directory where the executable/script is located
         if getattr(sys, 'frozen', False):
             # If running as compiled executable
-            base_path = Path(sys._MEIPASS)
+            base_path = Path(sys._MEIPASS).parent
         else:
             # If running as script
-            base_path = Path(__file__).parent.parent
+            base_path = Path(__file__).parent.parent.parent
             
         self.cache_dir = base_path / 'cache'
         self.cache_dir.mkdir(parents=True, exist_ok=True)
