@@ -99,7 +99,7 @@ class MainWindow:
         # Add bold labelframe style
         self.style.configure(
             "Bold.TLabelframe.Label",
-            font=('CommitMono', 12, 'bold'),
+            font=('CommitMono', 10, 'bold'),
             foreground=COLORS['gold']
         )
         

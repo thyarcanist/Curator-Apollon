@@ -14,6 +14,7 @@ from queue import Queue
 import requests
 import base64
 from ttkbootstrap.dialogs import Messagebox  # Update import
+import sys
 
 class CallbackHandler(http.server.SimpleHTTPRequestHandler):
     def __init__(self, *args, auth_queue=None, **kwargs):
@@ -135,7 +136,16 @@ class SpotifyService:
             print(f"Cache initialization error (non-fatal): {str(e)}")
     
     def _setup_cache(self):
-        self.cache_dir = Path.home() / '.cache' / 'apollon'
+        """Setup cache in the application directory instead of user home"""
+        # Get the directory where the executable/script is located
+        if getattr(sys, 'frozen', False):
+            # If running as compiled executable
+            base_path = Path(sys._MEIPASS)
+        else:
+            # If running as script
+            base_path = Path(__file__).parent.parent
+            
+        self.cache_dir = base_path / 'cache'
         self.cache_dir.mkdir(parents=True, exist_ok=True)
         self.cache_path = self.cache_dir / 'spotify_token.cache'
     

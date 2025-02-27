@@ -1,0 +1,6 @@
+ttkbootstrap
+spotipy
+Pillow
+requests
+pyinstaller
+tinyaes 
