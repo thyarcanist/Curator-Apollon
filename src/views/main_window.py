@@ -99,46 +99,55 @@ class MainWindow:
         dialog.title("Add Track")
         dialog.geometry("400x400")
         
+        def handle_spotify_import():
+            try:
+                url = spotify_url_entry.get()
+                if url:
+                    # Show authentication instructions
+                    messagebox.showinfo(
+                        "Spotify Authentication",
+                        "You will be redirected to Spotify to authenticate.\n\n"
+                        "After authorizing, you will be redirected to apollon.occybyte.com.\n\n"
+                        "Copy the FULL URL from your browser and paste it in the next dialog."
+                    )
+                    track = self.spotify_service.get_track_info(url)
+                    self.library.add_track(track)
+                    dialog.destroy()
+                    messagebox.showinfo("Success", "Track imported successfully!")
+            except Exception as e:
+                messagebox.showerror("Error", str(e))
+        
         # Spotify URL input
         ttk.Label(dialog, text="Spotify Track URL (optional):").pack(pady=5)
         spotify_url_entry = ttk.Entry(dialog)
         spotify_url_entry.pack(fill='x', padx=20)
         
-        def import_from_spotify():
-            try:
-                url = spotify_url_entry.get()
-                if url:
-                    track = self.spotify_service.get_track_info(url)
-                    self.library.add_track(track)
-                    dialog.destroy()
-                    return
-            except Exception as e:
-                messagebox.showerror("Error", f"Failed to import from Spotify: {str(e)}")
-        
         ttk.Button(dialog, text="Import from Spotify", 
-                  command=import_from_spotify).pack(pady=5)
+                  command=handle_spotify_import).pack(pady=5)
         
         ttk.Label(dialog, text="- OR -").pack(pady=10)
         
-        # Manual entry (existing code)
-        ttk.Label(dialog, text="Manual Entry:").pack(pady=5)
-        ttk.Label(dialog, text="Title:").pack(pady=5)
-        title_entry = ttk.Entry(dialog)
+        # Manual entry section
+        manual_frame = ttk.LabelFrame(dialog, text="Manual Entry")
+        manual_frame.pack(fill='x', padx=10, pady=5)
+        
+        ttk.Label(manual_frame, text="Title:").pack(pady=5)
+        title_entry = ttk.Entry(manual_frame)
         title_entry.pack(fill='x', padx=20)
         
-        ttk.Label(dialog, text="Artist:").pack(pady=5)
-        artist_entry = ttk.Entry(dialog)
+        ttk.Label(manual_frame, text="Artist:").pack(pady=5)
+        artist_entry = ttk.Entry(manual_frame)
         artist_entry.pack(fill='x', padx=20)
         
-        ttk.Label(dialog, text="BPM:").pack(pady=5)
-        bpm_entry = ttk.Entry(dialog)
+        ttk.Label(manual_frame, text="BPM:").pack(pady=5)
+        bpm_entry = ttk.Entry(manual_frame)
         bpm_entry.pack(fill='x', padx=20)
         
-        ttk.Label(dialog, text="Key:").pack(pady=5)
-        key_entry = ttk.Entry(dialog)
+        ttk.Label(manual_frame, text="Key:").pack(pady=5)
+        key_entry = ttk.Entry(manual_frame)
         key_entry.pack(fill='x', padx=20)
         
-        def save_track():
+        def save_manual_track():
             try:
                 track = Track(
                     id=f"manual_{len(self.library.tracks)}",
@@ -146,15 +155,17 @@ class MainWindow:
                     artist=artist_entry.get(),
                     bpm=float(bpm_entry.get()),
                     key=key_entry.get(),
-                    camelot_position="",  # We'll add this later
-                    energy_level=0.5  # Default value
+                    camelot_position="",
+                    energy_level=0.5
                 )
                 self.library.add_track(track)
                 dialog.destroy()
+                messagebox.showinfo("Success", "Track added successfully!")
             except ValueError as e:
                 messagebox.showerror("Error", "Please check your inputs")
         
-        ttk.Button(dialog, text="Save", command=save_track).pack(pady=20)
+        ttk.Button(manual_frame, text="Save Manual Entry", 
+                  command=save_manual_track).pack(pady=20)
     
     def _import_playlist_dialog(self):
         """Open dialog for importing a Spotify playlist"""
@@ -166,8 +177,15 @@ class MainWindow:
         url_entry = ttk.Entry(dialog, width=50)
         url_entry.pack(fill='x', padx=20)
         
-        def import_playlist():
+        def handle_import():
             try:
+                # Show authentication instructions
+                messagebox.showinfo(
+                    "Spotify Authentication",
+                    "You will be redirected to Spotify to authenticate.\n\n"
+                    "After authorizing, you will be redirected to apollon.occybyte.com.\n\n"
+                    "Copy the FULL URL from your browser and paste it in the next dialog."
+                )
                 url = url_entry.get()
                 tracks = self.spotify_service.import_playlist(url)
                 for track in tracks:
@@ -175,9 +193,9 @@ class MainWindow:
                 dialog.destroy()
                 messagebox.showinfo("Success", f"Imported {len(tracks)} tracks")
             except Exception as e:
-                messagebox.showerror("Error", f"Failed to import playlist: {str(e)}")
+                messagebox.showerror("Error", str(e))
         
-        ttk.Button(dialog, text="Import", command=import_playlist).pack(pady=20)
+        ttk.Button(dialog, text="Import", command=handle_import).pack(pady=20)
     
     def _remove_selected(self):
         """Remove selected tracks from the library"""

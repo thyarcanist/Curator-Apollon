@@ -4,36 +4,56 @@ from models.library import Track
 import re
 import os
 from pathlib import Path
+from tkinter import messagebox, simpledialog
+import webbrowser
+
+class CustomSpotifyOAuth(SpotifyOAuth):
+    def get_auth_response(self):
+        auth_url = self.get_authorize_url()
+        webbrowser.open(auth_url)
+        # Use tkinter dialog instead of input()
+        response = simpledialog.askstring(
+            "Spotify Authentication",
+            "Please paste the URL you were redirected to:",
+            initialvalue="https://apollon.occybyte.com/callback?code="
+        )
+        return response
 
 class SpotifyService:
     def __init__(self):
-        # Create cache directory if it doesn't exist
-        cache_dir = Path.home() / '.cache' / 'apollon'
-        cache_dir.mkdir(parents=True, exist_ok=True)
-        cache_path = cache_dir / 'spotify_token.cache'
+        self.sp = None
+        self.auth_manager = None
+        self._setup_cache()
         
-        # Initialize Spotify client with specific cache handling
-        auth_manager = SpotifyOAuth(
-            client_id="55c875d209d94fdf963a31243f5d6fdb",
-            client_secret="cf4f384ddf3c46c49e8ca8d15d3b71ba",
-            redirect_uri="https://apollon.occybyte.com/callback",
-            scope="user-library-read playlist-read-private",
-            cache_path=str(cache_path),
-            open_browser=True  # This will help with the authentication flow
-        )
-        
-        try:
-            self.sp = spotipy.Spotify(auth_manager=auth_manager)
-            # Test the connection
-            self.sp.current_user()
-        except Exception as e:
-            # If there's an authentication error, try clearing the cache and reconnecting
-            if cache_path.exists():
-                cache_path.unlink()
-            self.sp = spotipy.Spotify(auth_manager=auth_manager)
+    def _setup_cache(self):
+        """Setup cache directory for Spotify tokens"""
+        self.cache_dir = Path.home() / '.cache' / 'apollon'
+        self.cache_dir.mkdir(parents=True, exist_ok=True)
+        self.cache_path = self.cache_dir / 'spotify_token.cache'
+    
+    def ensure_authenticated(self):
+        """Ensure Spotify client is authenticated"""
+        if self.sp is None:
+            try:
+                self.auth_manager = CustomSpotifyOAuth(
+                    client_id="55c875d209d94fdf963a31243f5d6fdb",
+                    client_secret="cf4f384ddf3c46c49e8ca8d15d3b71ba",
+                    redirect_uri="https://apollon.occybyte.com/callback",
+                    scope="user-library-read playlist-read-private",
+                    cache_path=str(self.cache_path),
+                    open_browser=False  # We'll handle browser opening ourselves
+                )
+                self.sp = spotipy.Spotify(auth_manager=self.auth_manager)
+                # Test the connection
+                self.sp.current_user()
+            except Exception as e:
+                if self.cache_path.exists():
+                    self.cache_path.unlink()
+                raise Exception(f"Failed to authenticate with Spotify: {str(e)}\nPlease try again.")
     
     def get_track_info(self, spotify_url: str) -> Track:
         """Get track info from Spotify URL"""
+        self.ensure_authenticated()
         # Extract track ID from various Spotify URL formats
         track_id = self._extract_spotify_id(spotify_url)
         if not track_id:
@@ -60,6 +80,7 @@ class SpotifyService:
     
     def import_playlist(self, playlist_url: str) -> list[Track]:
         """Import tracks from a Spotify playlist URL"""
+        self.ensure_authenticated()
         try:
             # Extract playlist ID from various Spotify URL formats
             playlist_id = self._extract_spotify_id(playlist_url)
