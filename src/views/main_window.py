@@ -21,6 +21,7 @@ class MainWindow:
         self.spotify_service = spotify_service
         self.analysis_service = analysis_service
         self.current_playlist_url = None
+        self.current_track = None  # Add this to track selected track
         
         # Load custom font
         font_path = Path(__file__).parent.parent / "appearance" / "fonts" / "CommitMono VariableFont.woff2"
@@ -111,7 +112,7 @@ class MainWindow:
         self.notebook.add(self.playlist_info_frame, text='Playlist Info')
         self._setup_playlist_info_view()
         
-        # Analysis View
+        # Analysis View (merged)
         self.analysis_frame = ttk.Frame(self.notebook)
         self.notebook.add(self.analysis_frame, text='Analysis')
         self._setup_analysis_view()
@@ -168,6 +169,9 @@ class MainWindow:
             bootstyle="secondary"
         )
         self.export_button.pack(side="left", padx=5)
+        
+        # Add track selection binding
+        self.track_list.bind('<<TreeviewSelect>>', self._on_track_select)
     
     def _setup_playlist_info_view(self):
         """Setup the playlist information view"""
@@ -234,12 +238,97 @@ class MainWindow:
         ).pack(pady=10)
 
     def _setup_analysis_view(self):
-        # Analysis details
-        self.analysis_details = ttk.LabelFrame(self.analysis_frame, text='Track Analysis')
-        self.analysis_details.pack(expand=True, fill='both', padx=10, pady=5)
+        """Setup the analysis view with playlist and track statistics"""
+        # Create scrollable frame for all content
+        self.analysis_scroll = ScrolledFrame(self.analysis_frame)
+        self.analysis_scroll.pack(expand=True, fill='both', padx=5, pady=5)
         
-        # Will add Camelot wheel visualization here
+        content = self.analysis_scroll.container
         
+        # Current Track Analysis Section
+        self.current_track_frame = ttk.LabelFrame(content, text='Current Track Analysis')
+        self.current_track_frame.pack(fill='x', padx=10, pady=5)
+        
+        track_grid = ttk.Frame(self.current_track_frame)
+        track_grid.pack(padx=10, pady=5)
+        
+        track_labels = [
+            ('Title:', 'N/A'),
+            ('Artist:', 'N/A'),
+            ('Album:', 'N/A'),
+            ('BPM:', 'N/A'),
+            ('Key:', 'N/A'),
+            ('Time Signature:', 'N/A'),
+            ('Energy Level:', 'N/A'),
+            ('Camelot Position:', 'N/A')
+        ]
+        
+        self.track_values = {}
+        for i, (label, default) in enumerate(track_labels):
+            ttk.Label(track_grid, text=label).grid(row=i, column=0, sticky='e', padx=5, pady=2)
+            value_label = ttk.Label(track_grid, text=default)
+            value_label.grid(row=i, column=1, sticky='w', padx=5, pady=2)
+            self.track_values[label] = value_label
+        
+        # Playlist Analysis Section
+        playlist_stats = ttk.LabelFrame(content, text='Playlist Analysis')
+        playlist_stats.pack(fill='x', padx=10, pady=5)
+        
+        # Musical Statistics Section
+        musical_stats = ttk.LabelFrame(playlist_stats, text='Musical Statistics')
+        musical_stats.pack(fill='x', padx=10, pady=5)
+        
+        musical_labels = [
+            ('Average BPM:', '0'),
+            ('Average Key:', 'N/A'),
+            ('Max BPM:', '0'),
+            ('Min BPM:', '0'),
+            ('Most Common Key:', 'N/A'),
+            ('Key Distribution:', 'N/A'),
+            ('Time Signatures:', 'N/A'),
+            ('Common Time Songs:', '0'),
+            ('Odd Time Songs:', '0')
+        ]
+        
+        self.musical_values = {}
+        for i, (label, default) in enumerate(musical_labels):
+            ttk.Label(musical_stats, text=label).grid(row=i, column=0, sticky='e', padx=5, pady=2)
+            value_label = ttk.Label(musical_stats, text=default)
+            value_label.grid(row=i, column=1, sticky='w', padx=5, pady=2)
+            self.musical_values[label] = value_label
+        
+        # Literary Statistics Section
+        literary_stats = ttk.LabelFrame(playlist_stats, text='Literary Analysis')
+        literary_stats.pack(fill='x', padx=10, pady=5)
+        
+        literary_labels = [
+            ('Most Common Artist:', 'N/A'),
+            ('Most Used Word (count):', 'N/A'),
+            ('Least Used Word (count):', 'N/A'),
+            ('Top Characters:', 'N/A'),
+            ('Special Characters:', 'N/A'),
+            ('Numbers Used:', 'N/A'),
+            ('Average Title Length:', '0'),
+            ('Unique Artists:', '0'),
+            ('Repeated Words:', 'N/A'),
+            ('Title Pattern:', 'N/A')
+        ]
+        
+        self.literary_values = {}
+        for i, (label, default) in enumerate(literary_labels):
+            ttk.Label(literary_stats, text=label).grid(row=i, column=0, sticky='e', padx=5, pady=2)
+            value_label = ttk.Label(literary_stats, text=default)
+            value_label.grid(row=i, column=1, sticky='w', padx=5, pady=2)
+            self.literary_values[label] = value_label
+        
+        # Refresh button
+        ttk.Button(
+            playlist_stats,
+            text="Refresh Statistics",
+            command=self._update_playlist_stats,
+            bootstyle="secondary"
+        ).pack(pady=10)
+
     def _setup_discovery_view(self):
         # Entropy slider
         ttk.Label(self.discovery_frame, text='Entropy Level:').pack(pady=5)
@@ -707,4 +796,37 @@ class MainWindow:
             label.config(text="N/A")
         for label in self.literary_values.values():
             label.config(text="N/A")
-        self.set_status("Statistics reset - no tracks in library") 
+        self.set_status("Statistics reset - no tracks in library")
+
+    def _on_track_select(self, event):
+        """Handle track selection"""
+        selected_items = self.track_list.selection()
+        if selected_items:
+            item_id = selected_items[0]  # Get first selected item
+            values = self.track_list.item(item_id)['values']
+            
+            # Find the track in library
+            for track in self.library.get_all_tracks():
+                if track.title == values[0] and track.artist == values[1]:
+                    self.current_track = track
+                    self._update_current_track_analysis()
+                    break
+        else:
+            self.current_track = None
+            self._update_current_track_analysis()
+
+    def _update_current_track_analysis(self):
+        """Update the current track analysis display"""
+        if self.current_track:
+            self.track_values['Title:'].config(text=self.current_track.title)
+            self.track_values['Artist:'].config(text=self.current_track.artist)
+            self.track_values['Album:'].config(text=self.current_track.album or 'N/A')
+            self.track_values['BPM:'].config(text=str(self.current_track.bpm or 'N/A'))
+            self.track_values['Key:'].config(text=self.current_track.key or 'N/A')
+            self.track_values['Time Signature:'].config(text=self.current_track.time_signature)
+            self.track_values['Energy Level:'].config(text=str(self.current_track.energy_level or 'N/A'))
+            self.track_values['Camelot Position:'].config(text=str(self.current_track.camelot_position or 'N/A'))
+        else:
+            # Reset all values if no track is selected
+            for label in self.track_values.values():
+                label.config(text='N/A') 
