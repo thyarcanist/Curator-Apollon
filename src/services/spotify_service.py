@@ -305,9 +305,10 @@ class SpotifyService:
                                 ),
                                 energy_level=features['energy'],
                                 spotify_url=f"https://open.spotify.com/track/{track['id']}",
-                                album=track['album']['name']
+                                album=track['album']['name'],
+                                time_signature=f"{features['time_signature']}/4"  # Spotify returns beats per bar
                             ))
-                            print(f"✓ Imported with audio features")
+                            print("✓ Imported with audio features")
                         else:
                             # Fallback to basic track info if no features available
                             tracks.append(Track(
@@ -319,7 +320,8 @@ class SpotifyService:
                                 camelot_position=0,
                                 energy_level=0,
                                 spotify_url=f"https://open.spotify.com/track/{track['id']}",
-                                album=track['album']['name']
+                                album=track['album']['name'],
+                                time_signature="4/4"  # Default to common time
                             ))
                             print("! Imported without audio features")
                     except Exception as e:
@@ -334,7 +336,8 @@ class SpotifyService:
                             camelot_position=0,
                             energy_level=0,
                             spotify_url=f"https://open.spotify.com/track/{track['id']}",
-                            album=track['album']['name']
+                            album=track['album']['name'],
+                            time_signature="4/4"  # Default to common time
                         ))
                 
                 if not tracks:
