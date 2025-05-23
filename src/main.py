@@ -13,13 +13,19 @@ class CuratorApollon:
         self.root = ttk.Window(
             title="Curator Apollon",
             themename="darkly",
-            size=(800, 600)
+            size=(1200, 800)
         )
+        self.root.geometry("1200x800")
         
         # Set window icon
-        icon_path = Path(__file__).parent / "appearance" / "img" / "apollon.ico"
+        icon_path = Path(__file__).resolve().parent / "appearance" / "img" / "apollon.ico"
         if icon_path.exists():
-            self.root.iconbitmap(default=str(icon_path))
+            try:
+                self.root.iconbitmap(default=str(icon_path))
+            except Exception as e:
+                print(f"Error setting icon: {e}")
+        else:
+            print(f"Icon not found at {icon_path}")
         
         # Initialize services and views
         self.library = MusicLibrary()
@@ -33,21 +39,8 @@ class CuratorApollon:
         self.root.mainloop()
 
 def main():
-    root = ttk.Window(themename="darkly")
-    root.title("Curator Apollon")
-    root.geometry("1200x800")
-    
-    # Set window icon
-    icon_path = Path(__file__).parent / "appearance" / "img" / "apollon.ico"
-    if icon_path.exists():
-        root.iconbitmap(default=str(icon_path))
-    
-    library = MusicLibrary()
-    spotify_service = SpotifyService()
-    analysis_service = AnalysisService()
-    
-    app = MainWindow(root, library, spotify_service, analysis_service)
-    root.mainloop()
+    app = CuratorApollon()
+    app.run()
 
 if __name__ == "__main__":
     main() 

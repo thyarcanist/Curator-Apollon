@@ -121,7 +121,8 @@ class SpotifyService:
                 "playlist-read-collaborative",
                 "playlist-modify-public",
                 "playlist-modify-private",
-                "user-library-read"
+                "user-library-read",
+                "user-top-read"
             ]),
             cache_path=str(self.cache_path),
             open_browser=False,
