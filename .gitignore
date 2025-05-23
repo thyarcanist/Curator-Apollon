@@ -17,3 +17,4 @@ __pycache__/
 *.log.*.*.*.*
 /cache
 cache/spotify_token.cache
+cache/
