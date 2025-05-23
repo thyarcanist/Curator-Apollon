@@ -1,6 +1,6 @@
 import requests
 import os
-from typing import List, Optional
+from typing import List, Optional, NamedTuple, Tuple
 from models.library import Track # Correctly import Track
 
 # Placeholder for Track class if not imported, for type hinting
@@ -14,6 +14,10 @@ from models.library import Track # Correctly import Track
 #     energy_level: float
 #     time_signature: str = "4/4"
 #     # Add other fields as necessary based on your Track model
+
+class ParsedCamelotKey(NamedTuple):
+    number: int
+    mode: str  # 'A' or 'B'
 
 class EntropyService:
     def __init__(self, api_key: Optional[str] = None, api_link: Optional[str] = None):
@@ -82,6 +86,75 @@ class EntropyService:
             # print(f"An unexpected error occurred while fetching quantum randomness: {e}")
             return None
 
+    def _parse_camelot_key(self, camelot_str: str) -> Optional[ParsedCamelotKey]:
+        """Parses a Camelot string (e.g., '8A', '12B') into a ParsedCamelotKey object."""
+        if not isinstance(camelot_str, str) or not (2 <= len(camelot_str) <= 3):
+            return None
+        try:
+            number = int(camelot_str[:-1])
+            mode = camelot_str[-1]
+            if not (1 <= number <= 12 and mode in ('A', 'B')):
+                return None
+            return ParsedCamelotKey(number, mode)
+        except ValueError:
+            return None
+
+    # User-provided helper methods (adapted)
+    def _bpm_tolerance(self, entropy_level: float) -> int:
+        """Calculates BPM tolerance based on entropy level."""
+        return 5 + int(entropy_level * 20)  # expands range with entropy
+
+    def _is_key_compatible_strict(self, pk1: Optional[ParsedCamelotKey], pk2: Optional[ParsedCamelotKey]) -> bool:
+        """
+        User-provided strict Camelot key compatibility.
+        Checks if keys are identical or adjacent numbers with the same mode.
+        """
+        if pk1 is None or pk2 is None:
+            return False 
+        if pk1 == pk2:
+            return True
+        # abs(key1.number - key2.number) in [1, 11] means adjacent on the wheel (11 for 12-1 wrap)
+        return abs(pk1.number - pk2.number) in [1, 11] and pk1.mode == pk2.mode
+
+    def _is_compatible(self, track1: Track, track2: Track, entropy_level: float) -> bool:
+        """
+        User-provided overall compatibility check for two tracks.
+        Uses BPM tolerance (entropy-dependent) and strict key/time signature matching.
+        """
+        pk1 = self._parse_camelot_key(track1.camelot_position)
+        pk2 = self._parse_camelot_key(track2.camelot_position)
+
+        bpm_close = abs(track1.bpm - track2.bpm) <= self._bpm_tolerance(entropy_level)
+        key_match = self._is_key_compatible_strict(pk1, pk2) # Uses strict, non-entropy key check
+        time_sig_match = track1.time_signature == track2.time_signature # Strict time signature match
+        
+        return bpm_close and key_match and time_sig_match
+
+    def _quantum_shuffle(self, items: List, qr_bytes: bytes) -> List:
+        """
+        User-provided Fisher-Yates shuffle using QRNG bytes.
+        Shuffles a copy of the items list.
+        """
+        if not qr_bytes or not items:
+            return list(items) # Return a copy if no bytes or no items
+        
+        n = len(items)
+        items_copy = list(items)
+        
+        byte_idx = 0
+        for i in range(n - 1, 0, -1):  # Iterate from n-1 down to 1
+            if byte_idx >= len(qr_bytes):
+                # print("Warning: Not enough quantum bytes for a full shuffle.")
+                break 
+            
+            random_byte_val = qr_bytes[byte_idx]
+            j = random_byte_val % (i + 1)  # Determine swap index j such that 0 <= j <= i
+            byte_idx += 1
+            
+            items_copy[i], items_copy[j] = items_copy[j], items_copy[i]
+            
+        return items_copy
+
     def recommend_tracks(self, current_tracks: List[Track], current_playing_track: Track, entropy_level: float, num_recommendations: int = 5) -> List[Track]:
         """
         Recommends tracks based on musical similarity and quantum entropy.
@@ -127,17 +200,12 @@ class EntropyService:
         for track in candidate_tracks:
             bpm_compatible = abs(track.bpm - current_playing_track.bpm) <= bpm_similarity_threshold
             
-            key_compatible = self._is_key_compatible(
-                current_playing_track.camelot_position,
-                track.camelot_position,
-                entropy_level
+            key_compatible = self._is_key_compatible_strict(
+                self._parse_camelot_key(track.camelot_position),
+                self._parse_camelot_key(current_playing_track.camelot_position)
             )
             
-            time_sig_compatible = self._is_time_signature_compatible(
-                current_playing_track.time_signature,
-                track.time_signature,
-                entropy_level
-            )
+            time_sig_compatible = track.time_signature == current_playing_track.time_signature
 
             # Score based on compatibility, weighted by features
             # For now, a simple AND, but could be a weighted sum
@@ -191,7 +259,7 @@ class EntropyService:
 
         byte_idx = 0
         attempts = 0
-        max_attempts_per_selection = 10 # To prevent infinite loops if QRNG source is bad
+        max_attempts_per_selection = 10 # To prevent infinite loops
 
         while len(recommended_tracks_final) < num_to_select and attempts < num_to_select * max_attempts_per_selection:
             if byte_idx >= len(q_bytes):
