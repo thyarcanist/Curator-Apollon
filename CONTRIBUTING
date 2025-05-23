@@ -20,16 +20,56 @@ There are several ways you can help make Curator Apollon better:
     - Accurate BPM, Key, Camelot, and Time Signatures.
     - Detailed and nuanced genre classifications (e.g., not just "Electronic" but "Ambient Techno" or "Progressive Psytrance").
     - Potentially, in the future: mood descriptors (e.g., melancholic, energetic, introspective), instrumentation details, or other relevant musical attributes.
-- **Submission Process:** For now, the best way to submit metadata suggestions or corrections is to:
-    1. Open a **GitHub Issue** in this repository.
-    2. Title your issue clearly, e.g., "Metadata Correction for [Track Title] by [Artist]" or "Metadata Suggestion: [Track Title]".
-    3. In the issue body, please provide:
-        - Track Title & Artist (and Album, if relevant).
-        - Spotify URL if available (for easy lookup).
-        - The specific metadata point(s) you are correcting/suggesting (e.g., "BPM: Should be 125, not 120", "Genres: Add 'Dark Ambient'").
-        - If possible, a source or justification for your suggestion (e.g., "Confirmed via Beatport", "Personal analysis using DJ software").
+- **Submission Process - Using `contributions.json`:**
+    Curator Apollon can load supplementary metadata from a local `contributions.json` file located in its application data directory. This allows you to directly enhance your local library with more accurate or detailed information.
 
-Once we have a more robust system, we aim to integrate functionality to match imported song metadata against this community-curated dataset.
+    1.  **Location:**
+        -   Windows: `%APPDATA%\CuratorApollon\contributions.json` (e.g., `C:\Users\YourUser\AppData\Roaming\CuratorApollon\contributions.json`)
+        -   Linux/macOS: `~/.local/share/CuratorApollon/contributions.json`
+
+    2.  **Format:** The `contributions.json` file should be an array of JSON objects. Each object represents a contribution for a specific track and should match the structure defined in `src/models/contributions.py` (class `TrackContribution`).
+        Key fields include:
+        -   `track_id_spotify` (string, required): The Spotify track ID (e.g., "spotify:track:xxxxxxxxxxxxxxx"). This is used to match the contribution to a track in your library.
+        -   `bpm` (float, optional)
+        -   `key` (string, optional)
+        -   `time_signature` (string, optional)
+        -   `camelot_key` (string, optional)
+        -   `genre_keywords` (list of strings, optional)
+        -   `source_description` (string, optional): e.g., "Manual analysis via Traktor"
+        -   `confidence` (float, optional): e.g., 0.0 to 1.0
+
+        Example `contributions.json`:
+        ```json
+        [
+            {
+                "track_id_spotify": "spotify:track:yourTrackIdHere1",
+                "bpm": 125.0,
+                "key": "Am",
+                "camelot_key": "1A",
+                "genre_keywords": ["Techno", "Deep Techno"],
+                "source_description": "Manual analysis"
+            },
+            {
+                "track_id_spotify": "spotify:track:yourTrackIdHere2",
+                "time_signature": "3/4",
+                "genre_keywords": ["Ambient", "Experimental"]
+            }
+        ]
+        ```
+
+    3.  **Generating `contributions.json`:**
+        -   You can create or edit this JSON file manually.
+        -   For managing larger sets of contributions, you might consider using a spreadsheet program (like Google Sheets, Excel, LibreOffice Calc). You could define columns corresponding to the fields above, fill in your data, and then export the sheet to CSV.
+        -   You would then need a script or tool to convert the CSV data into the correct JSON format described above. The community might share such tools over time.
+        -   Alternatively, a collaborative approach could involve using a shared Google Form that populates a Google Sheet. The maintainers or community members could then periodically export and convert this sheet to a distributable `contributions.json` template or example.
+
+    4.  **Using GitHub for Discussion:** While individual metadata points are best managed via your local `contributions.json`, GitHub Issues remain the place to:
+        -   Discuss the `contributions.json` format and the `TrackContribution` model.
+        -   Propose new fields or types of metadata to be supported.
+        -   Share or request tools/scripts for converting spreadsheet data (like CSV) to the `contributions.json` format.
+        -   Report any bugs or issues with how Curator Apollon loads or applies data from `contributions.json`.
+
+This local `contributions.json` system is the first step towards a more robust way for users to manage and enhance their music metadata. Future developments might explore ways to share or federate these contributions more broadly.
 
 ### 2. Refining the Recommendation Engine (`EntropyService`)
 

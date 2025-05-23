@@ -19,6 +19,7 @@ from typing import List, Dict, Optional
 import json
 import os
 from pathlib import Path
+from .contributions import TrackContribution, load_contributions_from_json
 
 @dataclass
 class Track:
@@ -39,7 +40,15 @@ class MusicLibrary:
     def __init__(self):
         self.tracks: List[Track] = []
         self.observers: List = []
-        self.save_file_path: Path = self._get_save_file_path()
+        self.app_data_dir: Path = self._get_app_data_dir() # Store for reuse
+        self.save_file_path: Path = self.app_data_dir / "library.json"
+        
+        # Load contributions
+        self.contributions_file_path: Path = self.app_data_dir / "contributions.json"
+        self.loaded_contributions: Dict[str, TrackContribution] = load_contributions_from_json(str(self.contributions_file_path))
+        if self.loaded_contributions:
+            print(f"Loaded {len(self.loaded_contributions)} track contributions from {self.contributions_file_path}")
+
         self._load_library()
     
     def _get_app_data_dir(self) -> Path:
@@ -56,6 +65,25 @@ class MusicLibrary:
     def _get_save_file_path(self) -> Path:
         """Determines the full path to the library save file."""
         return self._get_app_data_dir() / "library.json"
+
+    def _apply_contribution_to_track(self, track: Track, contribution: TrackContribution):
+        """Applies a contribution to a track, filling in missing (None or empty) fields."""
+        if track.bpm is None and contribution.bpm is not None:
+            track.bpm = contribution.bpm
+        if not track.key and contribution.key: # Empty string check for key
+            track.key = contribution.key
+        if not track.time_signature and contribution.time_signature: # Empty string check for time_signature
+            track.time_signature = contribution.time_signature
+        if not track.camelot_position and contribution.camelot_key: # Empty string check for camelot_position
+            track.camelot_position = contribution.camelot_key
+        # For genres, we can extend existing genres with new ones from contribution, avoiding duplicates.
+        if contribution.genre_keywords:
+            existing_genres_lower = {g.lower() for g in track.genres}
+            for genre in contribution.genre_keywords:
+                if genre.lower() not in existing_genres_lower:
+                    track.genres.append(genre)
+        # Note: We are not currently overriding existing values in Track with contribution data if they already exist.
+        # This is a design choice: contributions primarily fill *missing* data.
 
     def _save_library(self):
         """Saves the current music library to a JSON file."""
@@ -74,6 +102,8 @@ class MusicLibrary:
         if not self.save_file_path.exists():
             # print(f"No library file found at {self.save_file_path}. Starting fresh.")
             self.tracks = []
+            # Still notify observers even if the library is fresh or file not found
+            self._notify_observers()
             return
 
         try:
@@ -82,14 +112,21 @@ class MusicLibrary:
             
             self.tracks = []
             for track_data in loaded_data:
-                # Ensure all required fields are present, provide defaults for optionals if missing
-                # This basic Track(**track_data) assumes JSON matches dataclass fields perfectly.
-                # For robustness, might add more checks or default value handling here if schema evolves.
                 try:
-                    # Ensure genres is a list, as old saves might not have it or have None
                     if 'genres' not in track_data or track_data['genres'] is None:
-                        track_data['genres'] = [] 
-                    self.tracks.append(Track(**track_data))
+                        track_data['genres'] = []
+                    
+                    # Create the track object
+                    track_obj = Track(**track_data)
+                    
+                    # Apply contributions if available for this track's ID
+                    # Assuming track.id is the Spotify track ID used in contributions
+                    if track_obj.id and track_obj.id in self.loaded_contributions:
+                        contribution = self.loaded_contributions[track_obj.id]
+                        self._apply_contribution_to_track(track_obj, contribution)
+                        # print(f"Applied contribution to track {track_obj.id} during load.")
+
+                    self.tracks.append(track_obj)
                 except TypeError as te:
                     print(f"Error creating Track object from data: {track_data}. Error: {te}")
             # print(f"Library loaded successfully from {self.save_file_path}. {len(self.tracks)} tracks.")
@@ -108,6 +145,12 @@ class MusicLibrary:
     def add_track(self, track: Track):
         """Add a single track and save the library."""
         if not any(t.id == track.id for t in self.tracks): # Avoid duplicates by ID
+            # Apply contributions before adding to the library
+            if track.id and track.id in self.loaded_contributions:
+                contribution = self.loaded_contributions[track.id]
+                self._apply_contribution_to_track(track, contribution)
+                # print(f"Applied contribution to new track {track.id} before adding.")
+
             self.tracks.append(track)
             self._save_library()
             self._notify_observers()
@@ -117,10 +160,20 @@ class MusicLibrary:
     def add_tracks(self, tracks_to_add: List[Track]):
         """Add multiple tracks at once and save the library."""
         added_count = 0
+        newly_added_tracks = [] # Keep track of tracks actually added in this batch
+
         for track in tracks_to_add:
             if not any(t.id == track.id for t in self.tracks):
+                # Apply contributions before adding to the library
+                if track.id and track.id in self.loaded_contributions:
+                    contribution = self.loaded_contributions[track.id]
+                    self._apply_contribution_to_track(track, contribution)
+                    # print(f"Applied contribution to new track {track.id} before batch adding.")
+                
                 self.tracks.append(track)
+                newly_added_tracks.append(track) # Add to this list
                 added_count += 1
+        
         if added_count > 0:
             self._save_library()
             self._notify_observers()
