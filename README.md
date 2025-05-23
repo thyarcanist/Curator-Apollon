@@ -98,6 +98,8 @@ it can be used to import and then export a playlist without doing anything fishy
 - Semantic fingerprinting for title/mood analysis (advanced `EntropyService` feature).
 - Weighted Markov chains, fractal affinity decay for recommendation evolution (advanced `EntropyService` features).
 
+The goal is for it to reflect, you, the user in songform. 
+
 ## 5. Essential UX Elements
 
 ### Key Interactions
@@ -127,3 +129,7 @@ it can be used to import and then export a playlist without doing anything fishy
 - Primary Foreground/Accent: Gold (`#FFD700`)
 - Text: White (`#FFFFFF`) or Gold.
 - Status indicators and dialogs utilize theme defaults or specific accents (e.g., danger for removal).
+
+## License
+
+This project is licensed under the GNU General Public License v3.0 - see the [LICENSE](LICENSE) file for details.
