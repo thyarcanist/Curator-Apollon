@@ -1,0 +1,7 @@
+When it comes to contributing to this project, Curator Apollon, key help is needed in the song metadata (as spotify's API is closed and Tune Bat doesn't have an API); so we will need a community sourced data gathering.
+
+Once that's robust we can add feature that will match the imported songs metadata to the data sourced song metrics on import.
+The other thing that would need refinement is the entropy recommendation itself; The goal is for it to reflect, you, the user in songform. 
+It's for the serious music listeners and the audiophiles.
+
+The only source of entropy should come from the Occybyte API, I will see about having a key specifically for this and how to actually implement that in a way that it won't get abused.
