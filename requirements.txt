@@ -3,4 +3,5 @@ spotipy
 Pillow
 requests
 pyinstaller
-tinyaes 
+tinyaes
+python-dotenv 

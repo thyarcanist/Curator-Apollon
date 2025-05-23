@@ -1,13 +1,18 @@
 import ttkbootstrap as ttk
 from ttkbootstrap.constants import *
 import os
+from dotenv import load_dotenv
+from pathlib import Path
 from PIL import Image, ImageTk
 from models.library import MusicLibrary
 from views.main_window import MainWindow
 from services.spotify_service import SpotifyService
 from services.analysis_service import AnalysisService
 from services.entropy_service import EntropyService
-from pathlib import Path
+
+# Load environment variables from .env file
+# This should be one of the first things your application does.
+load_dotenv()
 
 class CuratorApollon:
     def __init__(self):
