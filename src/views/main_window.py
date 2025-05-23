@@ -2,10 +2,11 @@ import ttkbootstrap as ttk
 from ttkbootstrap.constants import *
 from ttkbootstrap.dialogs import Messagebox
 from ttkbootstrap.scrolled import ScrolledFrame
-from typing import List
+from typing import List, Optional
 from models.library import MusicLibrary, Track
 from services.spotify_service import SpotifyService
 from services.analysis_service import AnalysisService
+from services.entropy_service import EntropyService
 from tkinter import filedialog
 from pathlib import Path
 import tkinter.font as tkFont
@@ -17,7 +18,8 @@ import io
 class MainWindow:
     def __init__(self, root, library: MusicLibrary, 
                  spotify_service: SpotifyService,
-                 analysis_service: AnalysisService):
+                 analysis_service: AnalysisService,
+                 entropy_service: Optional[EntropyService]):
         self.root = root
         
         # Make window scale with screen
@@ -30,6 +32,7 @@ class MainWindow:
         self.library = library
         self.spotify_service = spotify_service
         self.analysis_service = analysis_service
+        self.entropy_service = entropy_service
         self.current_playlist_url = None
         self.current_track = None  # Add this to track selected track
         
@@ -123,6 +126,9 @@ class MainWindow:
         
         self._setup_ui()
         self.library.add_observer(self)
+        self.set_status("Curator Apollon initialized.")
+        if self.entropy_service is None:
+            self.set_status("Warning: EntropyService (OccyByte API) not available. Quantum recommendations disabled.")
         
     def _setup_ui(self):
         # Create notebook for different views
@@ -365,18 +371,67 @@ class MainWindow:
         self.refresh_button.pack(pady=10)
 
     def _setup_discovery_view(self):
-        # Entropy slider
-        ttk.Label(self.discovery_frame, text='Entropy Level:').pack(pady=5)
-        self.entropy_slider = ttk.Scale(self.discovery_frame, from_=0, to=1, 
-                                      orient='horizontal')
-        self.entropy_slider.pack(fill='x', padx=10)
+        """Setup the Discovery tab with entropy controls and recommendations display."""
+        self.discovery_frame.grid_columnconfigure(0, weight=1)
+        self.discovery_frame.grid_rowconfigure(1, weight=1) # For the recommendations list
+
+        # Controls Frame
+        controls_frame = ttk.Frame(self.discovery_frame, padding=10)
+        controls_frame.grid(row=0, column=0, sticky="ew")
+        controls_frame.grid_columnconfigure(1, weight=1) # Allow slider to expand
+
+        ttk.Label(controls_frame, text="Entropy (Comfort Zone <-> Cosmic Drift):").grid(row=0, column=0, padx=5, pady=5, sticky="w")
         
-        # Recommendations list
-        self.recommendations_list = ttk.Treeview(self.discovery_frame,
-                                               columns=('Title', 'Artist', 'Match'),
-                                               show='headings')
-        self.recommendations_list.pack(expand=True, fill='both', pady=5)
-    
+        self.entropy_var = ttk.DoubleVar(value=0.25) # Default entropy
+        self.entropy_slider = ttk.Scale(controls_frame, from_=0.0, to=1.0, 
+                                        orient='horizontal', variable=self.entropy_var,
+                                        command=self._on_entropy_slider_change) # Optional: update label on change
+        self.entropy_slider.grid(row=0, column=1, padx=5, pady=5, sticky="ew")
+        
+        self.entropy_value_label = ttk.Label(controls_frame, text=f"{self.entropy_var.get():.2f}")
+        self.entropy_value_label.grid(row=0, column=2, padx=5, pady=5, sticky="w")
+
+        self.get_recs_button = ttk.Button(controls_frame, text="Get Quantum Recommendations", 
+                                            command=self._trigger_recommendations)
+        self.get_recs_button.grid(row=0, column=3, padx=10, pady=5, sticky="e")
+
+        if self.entropy_service is None:
+            self.get_recs_button.config(state="disabled")
+            ttk.Label(controls_frame, text="(OccyByte API N/A)", bootstyle="warning").grid(row=0, column=4, padx=5, pady=5, sticky="w")
+
+        # Recommendations List Frame (to contain Treeview and Scrollbar)
+        recs_list_frame = ttk.Frame(self.discovery_frame)
+        recs_list_frame.grid(row=1, column=0, sticky="nsew", padx=10, pady=(0,10))
+        recs_list_frame.grid_rowconfigure(0, weight=1)
+        recs_list_frame.grid_columnconfigure(0, weight=1)
+
+        self.recommendations_tree = ttk.Treeview(recs_list_frame,
+                                               columns=('Title', 'Artist', 'BPM', 'Key', 'Genres'),
+                                               show='headings', bootstyle="dark")
+        self.recommendations_tree.grid(row=0, column=0, sticky="nsew")
+
+        recs_scrollbar = ttk.Scrollbar(recs_list_frame, orient="vertical", command=self.recommendations_tree.yview)
+        self.recommendations_tree.configure(yscrollcommand=recs_scrollbar.set)
+        recs_scrollbar.grid(row=0, column=1, sticky="ns")
+
+        self.recommendations_tree.heading('Title', text='Title')
+        self.recommendations_tree.heading('Artist', text='Artist')
+        self.recommendations_tree.heading('BPM', text='BPM')
+        self.recommendations_tree.heading('Key', text='Key')
+        self.recommendations_tree.heading('Genres', text='Genres')
+
+        self.recommendations_tree.column('Title', width=250, stretch=True)
+        self.recommendations_tree.column('Artist', width=150, stretch=True)
+        self.recommendations_tree.column('BPM', width=60, stretch=False, anchor="center")
+        self.recommendations_tree.column('Key', width=80, stretch=False, anchor="center")
+        self.recommendations_tree.column('Genres', width=200, stretch=True)
+        
+        # Add a way to select the seed track for recommendations
+        # For now, it will use self.current_track (selected from main library)
+        # Could add a label: "Seed Track: [self.current_track.title if self.current_track else 'None']"
+        self.seed_track_label = ttk.Label(controls_frame, text="Seed: None selected")
+        self.seed_track_label.grid(row=1, column=0, columnspan=4, padx=5, pady=5, sticky="w")
+
     def update(self):
         """Update UI when library changes"""
         self._update_track_list()
@@ -1200,6 +1255,58 @@ class MainWindow:
             self.musical_values['Time Signatures:'].config(text=", ".join(sig_display))
         else:
             self.musical_values['Time Signatures:'].config(text="N/A")
+
+    def _on_entropy_slider_change(self, value):
+        self.entropy_value_label.config(text=f"{float(value):.2f}")
+
+    def _trigger_recommendations(self):
+        if self.entropy_service is None:
+            Messagebox.show_warning("API Error", "EntropyService is not available. Cannot get recommendations.")
+            return
+
+        if self.current_track is None:
+            Messagebox.show_info("No Seed Track", "Please select a track from the Library to use as a seed for recommendations.")
+            return
+
+        entropy_val = self.entropy_var.get()
+        all_tracks = self.library.get_all_tracks()
+        if not all_tracks:
+            Messagebox.show_info("Empty Library", "Your music library is empty. Add some tracks first!")
+            return
+
+        self.set_status(f"Getting quantum recommendations with entropy {entropy_val:.2f} based on {self.current_track.title}...")
+        
+        try:
+            # Call EntropyService (adjust num_recommendations as needed)
+            recommended_tracks = self.entropy_service.recommend_tracks(
+                current_tracks=all_tracks,
+                current_playing_track=self.current_track,
+                entropy_level=entropy_val,
+                num_recommendations=10 
+            )
+        except Exception as e:
+            print(f"Error calling recommend_tracks: {e}")
+            Messagebox.showerror("Recommendation Error", f"An error occurred while generating recommendations: {e}")
+            self.set_status("Error getting recommendations.")
+            return
+
+        # Clear previous recommendations
+        for item in self.recommendations_tree.get_children():
+            self.recommendations_tree.delete(item)
+
+        if recommended_tracks:
+            for track in recommended_tracks:
+                genre_str = ", ".join(track.genres) if track.genres else "N/A"
+                self.recommendations_tree.insert('', 'end', values=(
+                    track.title, track.artist, f"{track.bpm:.0f}" if track.bpm else "N/A", 
+                    track.camelot_position if track.camelot_position else "N/A", 
+                    genre_str
+                ))
+            self.set_status(f"Displayed {len(recommended_tracks)} recommendations.")
+        else:
+            self.set_status("No recommendations found based on current settings and seed track.")
+            # Optionally, insert a message into the treeview itself
+            # self.recommendations_tree.insert('', 'end', values=("No recommendations found.", "", "", "", ""))
 
 class ImportPlaylistDialog(ttk.Toplevel):
     """Custom dialog for importing playlists with proper sizing"""
