@@ -72,17 +72,22 @@ If you're interested in contributing code, that's fantastic! Here's a general gu
     6. Open a Pull Request against the `main` branch of this repository.
     7. Provide a clear title and description for your PR, explaining the changes and why they were made.
 
-## Regarding the Quantum Entropy Source (OccyByte API)
+## Regarding the Quantum Entropy Source (Occybyte API)
 
-A core principle of Curator Apollon is the use of *true* quantum randomness for its discovery features, sourced from the OccyByte API. There is **no fallback to Pseudo-Random Number Generators (PRNGs)**.
+A core principle of Curator Apollon is the use of *true* quantum randomness for its discovery features, sourced from the Occybyte API. There is **no fallback to Pseudo-Random Number Generators (PRNGs)**.
 
-- **API Key for Contributors:** Currently, to test the `EntropyService` and its recommendation generation live, you will need your own OccyByte API key and link, configured as environment variables (`OCCYBYTE_API_KEY`, `OCCYBYTE_API_LINK`) loaded via a `.env` file.
-- **Contributing Without a Key:** We understand that not everyone will have an API key. However, contributions to the *logic, algorithms, and theoretical underpinnings* of the `EntropyService` are highly encouraged and immensely valuable. You can develop and test these aspects by:
-    - Focusing on the code structure and functions within `entropy_service.py` that *don't* directly make the API call.
-    - Mocking the `get_quantum_random_bytes` method to return predictable byte strings for testing specific shuffle or selection scenarios.
-    - Participating in discussions about improving the recommendation quality regardless of the random data source's immediate availability during your local development.
+- **API Key Access (Free Tier Available):** Occybyte provides a **free tier API key upon user authentication**, which grants access to quantum random bytes. This free tier typically provides a set amount of data per request (e.g., 512 bytes).
+    - This is generally sufficient for testing the `EntropyService` and its recommendation generation, as the `get_quantum_random_bytes` method can be called multiple times if more bytes are needed for operations like shuffling a large list of potential tracks.
+    - To use this, you will need to authenticate with Occybyte to obtain your API key and then configure it along with the API link as environment variables (`Occybyte_API_KEY`, `Occybyte_API_LINK`) loaded via a `.env` file in the project root.
 
-We are exploring ways to make testing easier for contributors in the future, but the integrity of using a true quantum source for the core functionality remains paramount.
+- **Developing and Testing `EntropyService`:**
+    - With the free tier API key, you can directly test the full functionality of the `EntropyService`.
+    - If you prefer not to authenticate for an API key, or if you are designing complex scenarios that might hypothetically exceed rapid free tier usage, contributions to the *logic, algorithms, and theoretical underpinnings* of the `EntropyService` are still highly valuable. You can develop and test these aspects by:
+        - Focusing on the code structure and functions within `entropy_service.py` that *don't* directly make the API call.
+        - Mocking the `get_quantum_random_bytes` method to return predictable byte strings for testing specific shuffle or selection scenarios.
+        - Participating in discussions about improving the recommendation quality regardless of the random data source's immediate availability during your local development.
+
+We are exploring ways to make testing even smoother for contributors in the future, but the integrity of using a true quantum source for the core functionality remains paramount.
 
 ## Questions or Discussions?
 
