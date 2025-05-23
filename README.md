@@ -6,6 +6,8 @@ A personal tool to analyze music libraries and discover new tracks based on musi
 Going to open source it for community-curated metadata gathering, my own API will be used to power the randomness. At the minimum,
 it can be used to import and then export a playlist without doing anything fishy because that's saved in your personal cache.
 
+Please note that this project is released with a [Contributor Code of Conduct](CODE_OF_CONDUCT.md). By participating in this project you agree to abide by its terms. Our [Contributing Guidelines](CONTRIBUTING.md) provide more detail on how to get involved.
+
 ## 1. Essential Features
 
 ### Library Management
