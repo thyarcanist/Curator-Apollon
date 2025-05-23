@@ -1,20 +1,50 @@
-src/views/__pycache__
-src/models/__pycache__
-src/services/__pycache__
+# Python specific
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Distribution / packaging
 build/
 dist/
-*.pyc
-*.pyo
-*.pyd
-*.pyw
-*.pyz
+*.egg-info/
+*.spec
+
+# Virtual environments
+.venv/
 venv/
-__pycache__/
+env/
+
+# Logs
 *.log
+logs/
 *.log.*
-*.log.*.*
-*.log.*.*.*
-*.log.*.*.*.*
-/cache
-cache/spotify_token.cache
+
+# Local instance configuration
+.env
+*.env
+.env.*
+
+# IDE / Editor specific files (examples)
+.vscode/
+.idea/
+*.suo
+*.ntvs*.*
+*.njsproj
+*.sln
+*.sw?
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Cache files / directories
 cache/
+/cache/  # Redundant if cache/ is present, but explicit for root cache
+
+# Specific cache files (if needed, though cache/ should cover it)
+# cache/spotify_token.cache # Covered by cache/
