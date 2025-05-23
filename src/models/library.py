@@ -1,4 +1,4 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import List, Dict
 
 @dataclass
@@ -14,7 +14,7 @@ class Track:
     album: str = None
     time_signature: str = "4/4"  # Default to common time
     album_art_url: str = None  # Add this field
-    genres: List[str] = None  # Add genres field
+    genres: List[str] = field(default_factory=list)
 
 class MusicLibrary:
     def __init__(self):

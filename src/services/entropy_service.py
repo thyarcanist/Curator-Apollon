@@ -2,6 +2,8 @@ import requests
 import os
 from typing import List, Optional, NamedTuple, Tuple
 from models.library import Track # Correctly import Track
+import math # For ceiling function if needed for centroid mode finding
+from collections import Counter # For finding mode
 
 # Placeholder for Track class if not imported, for type hinting
 # class Track: # Remove placeholder
@@ -14,6 +16,21 @@ from models.library import Track # Correctly import Track
 #     energy_level: float
 #     time_signature: str = "4/4"
 #     # Add other fields as necessary based on your Track model
+
+# Define broad genre keywords for thematic matching
+# This list can be expanded and refined
+BROAD_GENRE_KEYWORDS = [
+    "ambient", "atmospheric", "soundtrack", "score", "experimental",
+    "electronic", "synth", "idm", "techno", "house", "trance", "downtempo",
+    "industrial", "ebm", "aggrotech", "noise",
+    "rock", "metal", "punk", "alternative", "indie", "post-rock", "shoegaze",
+    "classical", "orchestral", "choral",
+    "jazz", "blues",
+    "folk", "acoustic",
+    "hip hop", "rap",
+    "reggae", "dub",
+    "world"
+]
 
 class ParsedCamelotKey(NamedTuple):
     number: int
@@ -104,31 +121,172 @@ class EntropyService:
         """Calculates BPM tolerance based on entropy level."""
         return 5 + int(entropy_level * 20)  # expands range with entropy
 
-    def _is_key_compatible_strict(self, pk1: Optional[ParsedCamelotKey], pk2: Optional[ParsedCamelotKey]) -> bool:
+    def _is_key_compatible(self, pk1: Optional[ParsedCamelotKey], pk2: Optional[ParsedCamelotKey], entropy_level: float) -> bool:
         """
-        User-provided strict Camelot key compatibility.
-        Checks if keys are identical or adjacent numbers with the same mode.
+        Determines Camelot key compatibility based on entropy_level.
         """
         if pk1 is None or pk2 is None:
-            return False 
+            return False
+
         if pk1 == pk2:
             return True
-        # abs(key1.number - key2.number) in [1, 11] means adjacent on the wheel (11 for 12-1 wrap)
-        return abs(pk1.number - pk2.number) in [1, 11] and pk1.mode == pk2.mode
+
+        # Medium-Low Entropy (0.25 - 0.5): Adjacent numbers, same mode
+        if entropy_level <= 0.5:
+            # Adjacent numbers, same mode (e.g., 8A & 9A)
+            is_adjacent_same_mode = (
+                abs(pk1.number - pk2.number) == 1 and \
+                pk1.mode == pk2.mode
+            )
+            # Wheel wrap-around for adjacency (12 and 1), same mode
+            is_wrap_around_same_mode = (
+                ((pk1.number == 12 and pk2.number == 1) or \
+                 (pk1.number == 1 and pk2.number == 12)) and \
+                pk1.mode == pk2.mode
+            )
+            if is_adjacent_same_mode or is_wrap_around_same_mode:
+                return True
+            if entropy_level <= 0.25: # Stricter for very low entropy
+                return False 
+
+        # Medium-High Entropy (0.5 - 0.75): Allow "energy boost" + medium-low rules
+        if entropy_level > 0.5 and entropy_level <= 0.75:
+            is_energy_boost = (pk1.number == pk2.number and pk1.mode != pk2.mode)
+            is_adjacent_same_mode = (
+                abs(pk1.number - pk2.number) == 1 and \
+                pk1.mode == pk2.mode
+            )
+            is_wrap_around_same_mode = (
+                ((pk1.number == 12 and pk2.number == 1) or \
+                 (pk1.number == 1 and pk2.number == 12)) and \
+                pk1.mode == pk2.mode
+            )
+            if is_energy_boost or is_adjacent_same_mode or is_wrap_around_same_mode:
+                return True
+
+        # High Entropy (0.75 - 1.0): Allow wider jumps + energy boost + medium-low rules
+        if entropy_level > 0.75:
+            is_energy_boost = (pk1.number == pk2.number and pk1.mode != pk2.mode)
+            is_adjacent_same_mode = (
+                abs(pk1.number - pk2.number) == 1 and \
+                pk1.mode == pk2.mode
+            )
+            is_wrap_around_same_mode = (
+                ((pk1.number == 12 and pk2.number == 1) or \
+                 (pk1.number == 1 and pk2.number == 12)) and \
+                pk1.mode == pk2.mode
+            )
+            # +/- 2 numbers, same mode (e.g., 8A to 10A or 8A to 6A)
+            diff = abs(pk1.number - pk2.number)
+            is_wider_jump_same_mode = (
+                (diff == 2 or diff == 10) and pk1.mode == pk2.mode # diff 10 for wrap-around
+            )
+            if is_energy_boost or is_adjacent_same_mode or is_wrap_around_same_mode or is_wider_jump_same_mode:
+                return True
+        return False
+
+    def _is_time_signature_compatible(self, ts1: str, ts2: str, entropy_level: float) -> bool:
+        """Determines time signature compatibility based on entropy_level."""
+        if ts1 is None or ts2 is None or ts1 == "Unknown" or ts2 == "Unknown":
+            return False # Or True if we want to be lenient with unknowns
+        
+        if ts1 == ts2:
+            return True
+
+        # High Entropy (e.g., >= 0.6): Allow harmonically related time signatures
+        if entropy_level >= 0.6:
+            # Define common compatible pairs (can be expanded)
+            compatible_pairs = {
+                frozenset({"4/4", "2/4"}),
+                frozenset({"4/4", "2/2"}), # Cut time
+                frozenset({"3/4", "6/8"}), # Often interchangeable feel
+                # Add more as needed, e.g., 12/8 with 4/4 (triplet feel vs straight)
+            }
+            if frozenset({ts1, ts2}) in compatible_pairs:
+                return True
+        
+        return False
+
+    def _get_track_genre_keywords(self, track_genres: List[str]) -> set:
+        """Extracts broad genre keywords from a track's genre list."""
+        if not track_genres:
+            return set()
+        
+        found_keywords = set()
+        normalized_genres = [g.lower() for g in track_genres]
+        
+        for broad_keyword in BROAD_GENRE_KEYWORDS:
+            for genre_tag in normalized_genres:
+                if broad_keyword in genre_tag: # Checking if "ambient" is in "dark ambient"
+                    found_keywords.add(broad_keyword)
+        return found_keywords
+
+    def _are_genres_compatible(self, genres1: List[str], genres2: List[str], entropy_level: float) -> bool:
+        """Determines genre compatibility based on entropy and broad keyword matching."""
+        if not genres1 and not genres2: # Both have no genres
+            return True # Or False, depending on desired behavior for ungenred tracks
+        if not genres1 or not genres2: # One has genres, the other doesn't
+            if entropy_level >= 0.75: # At high entropy, be lenient if one track lacks genres
+                return True
+            return False
+
+        norm_genres1 = {g.lower() for g in genres1}
+        norm_genres2 = {g.lower() for g in genres2}
+
+        # Low Entropy: Require at least one exact shared genre tag
+        if entropy_level < 0.3:
+            return bool(norm_genres1.intersection(norm_genres2))
+
+        # Medium Entropy: Prefer exact match, then check for shared broad keywords
+        if entropy_level < 0.7:
+            if norm_genres1.intersection(norm_genres2):
+                return True
+            # Check for shared broad keywords
+            keywords1 = self._get_track_genre_keywords(genres1)
+            keywords2 = self._get_track_genre_keywords(genres2)
+            if keywords1.intersection(keywords2):
+                return True
+            return False
+        
+        # High Entropy: Any overlap (exact or keyword) is a weak positive signal, mostly permissive
+        # For simplicity at high entropy, any thematic link is enough.
+        # Or, simply return True to make genre less of a barrier.
+        if norm_genres1.intersection(norm_genres2):
+            return True
+        keywords1 = self._get_track_genre_keywords(genres1)
+        keywords2 = self._get_track_genre_keywords(genres2)
+        if keywords1.intersection(keywords2):
+            return True
+        
+        # At very high entropy, if no direct or keyword match, still might be compatible overall
+        # The _is_compatible method will combine this with BPM, key, etc.
+        # So if genres *don't* match at all, this will return False, but that might be overridden
+        # by strong matches in other areas if we change how scores are combined.
+        # For now, if no genre link found, return False unless entropy is maxed out.
+        if entropy_level >= 0.9: # Very permissive at max chaos
+            return True
+        return False
 
     def _is_compatible(self, track1: Track, track2: Track, entropy_level: float) -> bool:
         """
-        User-provided overall compatibility check for two tracks.
-        Uses BPM tolerance (entropy-dependent) and strict key/time signature matching.
+        Overall compatibility check using entropy-aware helpers, now including genres.
         """
         pk1 = self._parse_camelot_key(track1.camelot_position)
         pk2 = self._parse_camelot_key(track2.camelot_position)
 
         bpm_close = abs(track1.bpm - track2.bpm) <= self._bpm_tolerance(entropy_level)
-        key_match = self._is_key_compatible_strict(pk1, pk2) # Uses strict, non-entropy key check
-        time_sig_match = track1.time_signature == track2.time_signature # Strict time signature match
+        key_match = self._is_key_compatible(pk1, pk2, entropy_level)
+        time_sig_match = self._is_time_signature_compatible(track1.time_signature, track2.time_signature, entropy_level)
+        genre_match = self._are_genres_compatible(track1.genres, track2.genres, entropy_level)
         
-        return bpm_close and key_match and time_sig_match
+        # Adjust weighting based on entropy. At high entropy, individual failures are less critical if others match.
+        if entropy_level < 0.5: # Stricter: all must match
+            return bpm_close and key_match and time_sig_match and genre_match
+        elif entropy_level < 0.8: # Medium: allow one mismatch if others strong
+            # e.g., 3 out of 4 conditions met
+            return sum([bpm_close, key_match, time_sig_match, genre_match]) >= 3
+        else: # High entropy: very lenient, e.g., 2 out of 4, or even prioritize quantum shuffle more
+            return sum([bpm_close, key_match, time_sig_match, genre_match]) >= 2
 
     def _quantum_shuffle(self, items: List, qr_bytes: bytes) -> List:
         """
@@ -155,236 +313,119 @@ class EntropyService:
             
         return items_copy
 
+    # Placeholder for centroid calculation - to be implemented next
+    def _calculate_playlist_centroid(self, tracks: List[Track]) -> Optional[dict]:
+        if not tracks:
+            return None
+
+        avg_bpm = 120.0
+        valid_bpms = [t.bpm for t in tracks if t.bpm is not None and t.bpm > 0]
+        if valid_bpms: avg_bpm = sum(valid_bpms) / len(valid_bpms)
+
+        mode_camelot_parsed = None
+        parsed_keys = [self._parse_camelot_key(t.camelot_position) for t in tracks]
+        valid_parsed_keys = [pk for pk in parsed_keys if pk is not None]
+        if valid_parsed_keys: mode_camelot_parsed = Counter(valid_parsed_keys).most_common(1)[0][0]
+        
+        mode_time_sig = "4/4"
+        valid_time_sigs = [t.time_signature for t in tracks if t.time_signature and t.time_signature != "Unknown"]
+        if valid_time_sigs: mode_time_sig = Counter(valid_time_sigs).most_common(1)[0][0]
+
+        # Genre Centroid: Most common broad keywords
+        all_track_keywords = []
+        for t in tracks:
+            all_track_keywords.extend(list(self._get_track_genre_keywords(t.genres)))
+        
+        centroid_genres_keywords = []
+        if all_track_keywords:
+            keyword_counts = Counter(all_track_keywords)
+            # Take top N keywords, e.g., top 3, or those above a certain frequency
+            centroid_genres_keywords = [kw for kw, count in keyword_counts.most_common(3)]
+            
+        return {
+            'bpm': avg_bpm,
+            'camelot_parsed': mode_camelot_parsed,
+            'time_signature': mode_time_sig,
+            'genre_keywords': centroid_genres_keywords # List of strings (broad keywords)
+        }
+
     def recommend_tracks(self, current_tracks: List[Track], current_playing_track: Track, entropy_level: float, num_recommendations: int = 5) -> List[Track]:
         """
-        Recommends tracks based on musical similarity and quantum entropy.
-
-        Args:
-            current_tracks: The list of all tracks in the library.
-            current_playing_track: The track currently being played or selected as a reference.
-            entropy_level: A float between 0.0 (deterministic) and 1.0 (max chaos).
-                           0.0: Focus on very similar tracks (BPM, Key, Time Signature).
-                           1.0: Maximize randomness in selection, allowing more distant matches.
-            num_recommendations: The number of tracks to recommend.
-
-        Returns:
-            A list of recommended Track objects. Returns an empty list if recommendations
-            cannot be generated (e.g., API error, no compatible tracks).
+        Recommends tracks based on musical similarity (now more entropy-aware) and quantum entropy.
+        Integrates a basic playlist centroid concept for high entropy.
         """
         if not current_tracks or not current_playing_track:
             return []
-
         if not (0.0 <= entropy_level <= 1.0):
             raise ValueError("Entropy level must be between 0.0 and 1.0.")
-        
-        # 1. Define compatibility criteria based on entropy
-        # BPM tolerance: Increases with entropy
-        # Max BPM diff: e.g., 5 at entropy 0, up to 30 at entropy 1
-        bpm_similarity_threshold = 5 + (entropy_level * 25) 
 
-        # Key compatibility:
-        # Entropy 0: Exact Camelot match or direct compatibles (+/-1, same letter A/B)
-        # Entropy 0.5: Allow energy boost (e.g., 8A -> 8B)
-        # Entropy 1.0: Wider Camelot wheel jumps, possibly weighted by quantum randomness
-
-        # Time signature:
-        # Entropy < 0.5: Prefer exact match
-        # Entropy >= 0.5: Allow compatible (e.g. 2/4 for 4/4), weighted by quantum randomness
-
-        # 2. Filter candidate tracks (excluding the current playing track)
         candidate_tracks = [t for t in current_tracks if t.id != current_playing_track.id]
         if not candidate_tracks:
             return []
 
+        playlist_centroid_features = self._calculate_playlist_centroid(current_tracks)
+        
+        # Create a pseudo-track object for the centroid if features are available
+        # This helps in using the _is_compatible method with the centroid
+        centroid_track_surrogate = None
+        if playlist_centroid_features and playlist_centroid_features['camelot_parsed']:
+            # Need to convert ParsedCamelotKey back to string for Track model, or adapt Track model/compatibility
+            # For now, let's assume Track can be instantiated with these core features for comparison.
+            # This part needs care: Track expects camelot_position as string.
+            camelot_str_from_parsed = f"{playlist_centroid_features['camelot_parsed'].number}{playlist_centroid_features['camelot_parsed'].mode}"
+            centroid_track_surrogate = Track(
+                id="_playlist_centroid", 
+                title="Playlist Centroid", 
+                artist="Various", 
+                bpm=playlist_centroid_features['bpm'], 
+                key="", # Raw key not derived for centroid yet
+                camelot_position=camelot_str_from_parsed, 
+                energy_level=0.5, # Placeholder
+                time_signature=playlist_centroid_features['time_signature'],
+                genres=playlist_centroid_features.get('genre_keywords', []) # Use derived centroid genre keywords
+            )
+
         compatible_tracks = []
         for track in candidate_tracks:
-            bpm_compatible = abs(track.bpm - current_playing_track.bpm) <= bpm_similarity_threshold
+            is_compatible_with_current = self._is_compatible(track, current_playing_track, entropy_level)
             
-            key_compatible = self._is_key_compatible_strict(
-                self._parse_camelot_key(track.camelot_position),
-                self._parse_camelot_key(current_playing_track.camelot_position)
-            )
-            
-            time_sig_compatible = track.time_signature == current_playing_track.time_signature
+            is_compatible_with_centroid = False
+            if centroid_track_surrogate and entropy_level > 0.55: # Bias towards centroid at higher entropy
+                centroid_compatibility_entropy = min(1.0, entropy_level + 0.15) # Slightly boost entropy for centroid matching
+                is_compatible_with_centroid = self._is_compatible(track, centroid_track_surrogate, centroid_compatibility_entropy)
 
-            # Score based on compatibility, weighted by features
-            # For now, a simple AND, but could be a weighted sum
-            if bpm_compatible and key_compatible and time_sig_compatible:
+            if is_compatible_with_current or is_compatible_with_centroid:
                 compatible_tracks.append(track)
         
+        # Remove duplicates if a track was compatible with both
+        if compatible_tracks:
+            seen_ids = set()
+            unique_compatible_tracks = []
+            for track in compatible_tracks:
+                if track.id not in seen_ids:
+                    unique_compatible_tracks.append(track)
+                    seen_ids.add(track.id)
+            compatible_tracks = unique_compatible_tracks
+
         if not compatible_tracks:
-            # If no strictly compatible tracks, and entropy is high,
-            # we might consider a broader pool or just return empty.
-            # For now, return empty if primary filters yield nothing.
             return []
 
-        # 3. Use Quantum Randomness for selection and ordering
         num_to_select = min(len(compatible_tracks), num_recommendations)
         if num_to_select == 0:
             return []
 
-        # Amount of randomness: e.g., a few bytes per potential pick, or to select indices
-        # Let's fetch enough bytes to select indices for the number of recommendations.
-        # If we have N compatible_tracks and want to pick K, we need randomness for K selections.
-        # Max index is N-1. Each byte gives 0-255.
-        # A simple way: get `num_to_select` random bytes. Modulo each byte by `len(compatible_tracks)`.
-        # This introduces modulo bias if `len(compatible_tracks)` is not a divisor of 256.
-        # A better way is to get more bytes and ensure uniformity.
+        bytes_for_shuffle = len(compatible_tracks) - 1 if len(compatible_tracks) > 1 else 0
+        q_bytes = None
+        if bytes_for_shuffle > 0:
+            q_bytes = self.get_quantum_random_bytes(bytes_for_shuffle)
+
+        if not q_bytes:
+            if entropy_level < 0.1 or len(compatible_tracks) <= 1:
+                return compatible_tracks[:num_to_select]
+            return []
         
-        # For robust index selection without modulo bias from N items using random bytes:
-        # Request enough bytes to ensure that (256^num_bytes) / N is large enough.
-        # Or, for each selection, draw a byte, if byte_value >= N * floor(256/N), redraw.
-        # This ensures each of the N items has an equal chance.
-
-        selected_indices = set()
-        recommended_tracks_final = []
-        
-        # Fetch a pool of random bytes. More bytes means fewer API calls if retries are needed.
-        # Estimate: 1 byte per selection attempt. Let's get a bit more for retries.
-        random_bytes_needed = num_to_select * 2 # Get twice to be safe for re-draws
-        q_bytes = self.get_quantum_random_bytes(random_bytes_needed)
-
-        if not q_bytes or len(q_bytes) == 0:
-            # print("Failed to get quantum randomness. Cannot provide quantum-influenced recommendations.")
-            # CRITICAL: No PRNG fallback. If quantum source fails, the "quantum" part fails.
-            # What to do here? 
-            # Option 1: Return empty list.
-            # Option 2: Return a purely deterministic list (entropy_level effectively becomes 0).
-            # For now, per instruction "DO NOT USE PRNG", if QRNG fails, we cannot meet the randomness req.
-            # Let's return what we have *before* quantum shuffling if entropy is low,
-            # or empty if high entropy was key.
-            if entropy_level < 0.1: # If very low entropy, order doesn't matter as much
-                 return compatible_tracks[:num_to_select] # Deterministic pick
-            return [] # Indicate failure to provide quantum-random recommendations
-
-        byte_idx = 0
-        attempts = 0
-        max_attempts_per_selection = 10 # To prevent infinite loops
-
-        while len(recommended_tracks_final) < num_to_select and attempts < num_to_select * max_attempts_per_selection:
-            if byte_idx >= len(q_bytes):
-                # print("Ran out of quantum random bytes. Fetching more.")
-                more_q_bytes = self.get_quantum_random_bytes(num_to_select * 2)
-                if not more_q_bytes:
-                    # print("Failed to get additional quantum randomness.")
-                    break # Cannot continue without randomness
-                q_bytes += more_q_bytes
-            
-            if byte_idx >= len(q_bytes): # Still no bytes after trying to fetch more
-                break
-
-            random_val = q_bytes[byte_idx]
-            byte_idx += 1
-            
-            # Fair index selection (reject and redraw to avoid modulo bias)
-            # N = len(compatible_tracks)
-            # if random_val >= N * floor(256/N): continue drawing
-            # effective_range = len(compatible_tracks) * (256 // len(compatible_tracks)) 
-            # This can be complex. Simpler for now: modulo, acknowledge bias for prototype.
-            # For a production system, proper unbiasing is critical.
-            
-            # Simple modulo for now (acknowledging potential bias)
-            if not compatible_tracks: break # Should not happen if num_to_select > 0
-
-            selected_idx = random_val % len(compatible_tracks)
-            
-            if selected_idx not in selected_indices:
-                selected_indices.add(selected_idx)
-                recommended_tracks_final.append(compatible_tracks[selected_idx])
-            
-            attempts += 1
-
-        # If quantum selection failed to get enough unique tracks (e.g. bad bytes, too few unique compatibles)
-        # fill with remaining compatible tracks if any, up to num_recommendations
-        if len(recommended_tracks_final) < num_to_select:
-            # print(f"Quantum selection yielded {len(recommended_tracks_final)} tracks. Filling deterministically.")
-            for track in compatible_tracks:
-                if len(recommended_tracks_final) >= num_to_select:
-                    break
-                if track not in recommended_tracks_final: # Crude way to find unselected
-                    recommended_tracks_final.append(track)
-        
-        # The final list `recommended_tracks_final` is now "shuffled" by quantum selection.
-        # If `entropy_level` is high, this selection is the primary driver.
-        # If `entropy_level` is low, the `compatible_tracks` list was already narrow,
-        # and quantum randomness just picks from that narrow list.
-
-        return recommended_tracks_final
-
-    def _is_key_compatible(self, key1: str, key2: str, entropy: float) -> bool:
-        """
-        Determines if two Camelot keys are compatible based on entropy.
-        Example: key1 = "8A", key2 = "9A"
-        """
-        if key1 == "Unknown" or key2 == "Unknown":
-            return True # Or False, depending on desired strictness
-
-        if not isinstance(key1, str) or not isinstance(key2, str):
-            return False # Should be strings
-
-        if key1 == key2:
-            return True
-
-        try:
-            if not (2 <= len(key1) <= 3 and 2 <= len(key2) <= 3): # e.g. "1A" or "10A"
-                return False
-
-            key1_num_str, key1_letter = key1[:-1], key1[-1]
-            key2_num_str, key2_letter = key2[:-1], key2[-1]
-
-            if not key1_num_str.isdigit() or not key2_num_str.isdigit():
-                return False
-            
-            key1_num = int(key1_num_str)
-            key2_num = int(key2_num_str)
-
-            if not (key1_letter in ('A', 'B') and key2_letter in ('A', 'B')):
-                return False
-            if not (1 <= key1_num <= 12 and 1 <= key2_num <= 12):
-                return False
-        except (ValueError, IndexError, TypeError):
-            return False # Catch any parsing/conversion errors
-
-        # Rule 1: Same number, different letter (e.g., 8A and 8B) - "Energy Boost"
-        if key1_num == key2_num and key1_letter != key2_letter:
-            if entropy >= 0.3: # Allow energy boost if entropy is moderate
-                return True
-        
-        # Rule 2: Adjacent numbers, same letter (e.g., 8A and 9A, or 8A and 7A)
-        if key1_letter == key2_letter:
-            # Check for direct adjacency
-            if abs(key1_num - key2_num) == 1:
-                return True
-            # Check for wheel wrap-around (12 and 1 are adjacent)
-            if (key1_num == 12 and key2_num == 1) or \
-               (key1_num == 1 and key2_num == 12):
-                return True
-
-        # Rule 3: Wider jumps based on entropy (more chaotic)
-        if key1_letter == key2_letter and entropy >= 0.7:
-            diff = abs(key1_num - key2_num)
-            # +/- 2 on the wheel. diff == 10 is equivalent to -2 (e.g. 12 vs 2 is diff 10, or 1 vs 11 is diff 10)
-            if diff == 2 or diff == 10: 
-                 return True
-        
-        return False
-
-
-    def _is_time_signature_compatible(self, sig1: str, sig2: str, entropy: float) -> bool:
-        if sig1 == "Unknown" or sig2 == "Unknown":
-            return True # Or False
-        
-        if sig1 == sig2:
-            return True
-
-        # Allow simple compatible time signatures if entropy is high enough
-        if entropy >= 0.5:
-            common_beat_feel = {("4/4", "2/4"), ("2/4", "4/4"), 
-                                ("3/4", "6/8"), ("6/8", "3/4")} # Example pairs
-            if (sig1, sig2) in common_beat_feel:
-                return True
-        
-        return False
+        shuffled_compatible_tracks = self._quantum_shuffle(compatible_tracks, q_bytes)
+        return shuffled_compatible_tracks[:num_to_select]
 
 # Example Usage (requires OCCYBYTE_API_KEY and OCCYBYTE_API_LINK to be set as env vars):
 # if __name__ == "__main__":

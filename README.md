@@ -3,6 +3,8 @@
 
 ## Core Purpose
 A personal tool to analyze music libraries and discover new tracks based on music theory relationships and customizable entropy.
+Going to open source it for community-curated metadata gathering, my own API will be used to power the randomness. At the minimum,
+it can be used to import and then export a playlist without doing anything fishy because that's saved in your personal cache.
 
 ## 1. Essential Features
 
