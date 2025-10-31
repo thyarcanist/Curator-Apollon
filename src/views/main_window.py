@@ -643,10 +643,11 @@ class MainWindow:
 
     def export_playlist(self):
         """Handle playlist export"""
-        if not self.current_playlist_url:
+        tracks = self.library.get_all_tracks()
+        if not tracks:
             Messagebox.show_warning(
-                "No Playlist",
-                "Please import a playlist first before exporting."
+                "No Tracks",
+                "Your library is empty. Import or add tracks before exporting."
             )
             return
             
@@ -660,17 +661,23 @@ class MainWindow:
         
         if file_path:
             self.set_status("Exporting playlist...")
-            if self.spotify_service.export_playlist_to_txt(self.current_playlist_url, file_path):
+            try:
+                with open(file_path, 'w', encoding='utf-8') as f:
+                    f.write("Curator Apollon - Playlist Export\n")
+                    f.write("================================\n\n")
+                    for i, track in enumerate(tracks, 1):
+                        album_name = track.album if getattr(track, 'album', None) else "Unknown Album"
+                        f.write(f"{i}. {track.title} - {track.artist} [{album_name}]\n")
                 self.set_status(f"Playlist exported to {file_path}")
                 Messagebox.show_info(
                     "Export Successful",
                     f"Playlist has been exported to:\n{file_path}"
                 )
-            else:
+            except Exception as e:
                 self.set_status("Export failed")
                 Messagebox.show_error(
                     "Export Failed",
-                    "Failed to export playlist. Please check the logs for details."
+                    f"Failed to export playlist. Error: {e}"
                 )
 
     def set_status(self, message: str):
