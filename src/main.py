@@ -25,6 +25,8 @@ from views.main_window import MainWindow
 from services.spotify_service import SpotifyService
 from services.analysis_service import AnalysisService
 from services.entropy_service import EntropyService
+from models.profile import ProfileManager
+from services.musicbrainz_service import MusicBrainzService
 
 # Load environment variables from .env file
 # This should be one of the first things your application does.
@@ -49,10 +51,13 @@ class CuratorApollon:
         else:
             print(f"Icon not found at {icon_path}")
         
-        # Initialize services and views
-        self.library = MusicLibrary("default")
+        # Initialize profiles and services
+        self.profile_manager = ProfileManager()
+        current_profile = self.profile_manager.get_current_profile()
+        self.library = MusicLibrary(current_profile)
         self.spotify_service = SpotifyService()
         self.analysis_service = AnalysisService()
+        self.musicbrainz_service = MusicBrainzService()
         
         # Instantiate EntropyService
         self.entropy_service = None # Initialize to None
@@ -69,7 +74,9 @@ class CuratorApollon:
         self.main_window = MainWindow(self.root, self.library, 
                                     self.spotify_service, 
                                     self.analysis_service,
-                                    self.entropy_service) # Pass EntropyService
+                                    self.entropy_service,
+                                    self.profile_manager,
+                                    self.musicbrainz_service) # Pass MB service
     
     def run(self):
         self.root.mainloop()

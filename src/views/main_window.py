@@ -23,6 +23,8 @@ from models.library import MusicLibrary, Track
 from services.spotify_service import SpotifyService
 from services.analysis_service import AnalysisService
 from services.entropy_service import EntropyService
+from models.profile import ProfileManager
+from services.musicbrainz_service import MusicBrainzService
 from tkinter import filedialog
 from pathlib import Path
 import tkinter.font as tkFont
@@ -35,7 +37,9 @@ class MainWindow:
     def __init__(self, root, library: MusicLibrary, 
                  spotify_service: SpotifyService,
                  analysis_service: AnalysisService,
-                 entropy_service: Optional[EntropyService]):
+                 entropy_service: Optional[EntropyService],
+                 profile_manager: ProfileManager,
+                 musicbrainz_service: MusicBrainzService):
         self.root = root
         
         # Make window scale with screen
@@ -49,6 +53,8 @@ class MainWindow:
         self.spotify_service = spotify_service
         self.analysis_service = analysis_service
         self.entropy_service = entropy_service
+        self.profile_manager = profile_manager
+        self.musicbrainz_service = musicbrainz_service
         self.current_playlist_url = None
         self.current_track = None  # Add this to track selected track
         # Preference flags
@@ -157,6 +163,60 @@ class MainWindow:
         
     def _setup_ui(self):
         # Create notebook for different views
+        # Top bar with profile selection
+        top_bar = ttk.Frame(self.root)
+        top_bar.pack(fill='x')
+
+        ttk.Label(top_bar, text='Profile:').pack(side='left', padx=(8, 4))
+        self.profile_var = ttk.StringVar(value=self.profile_manager.get_current_profile())
+        self.profile_combo = ttk.Combobox(top_bar, textvariable=self.profile_var,
+                                          values=self.profile_manager.list_profiles(), state='readonly')
+        self.profile_combo.pack(side='left', padx=(0, 8))
+
+        def on_profile_change(event=None):
+            new_profile = self.profile_var.get().strip() or 'default'
+            try:
+                self.profile_manager.set_current_profile(new_profile)
+                # Rebind library to new profile
+                if hasattr(self.library, 'observers') and self in getattr(self.library, 'observers', []):
+                    try:
+                        self.library.observers.remove(self)
+                    except Exception:
+                        pass
+                self.library = MusicLibrary(new_profile)
+                self.library.add_observer(self)
+                self.update()
+                self.set_status(f"Switched profile to '{new_profile}'")
+            except Exception as e:
+                self.set_status(f"Profile switch failed: {e}")
+
+        self.profile_combo.bind('<<ComboboxSelected>>', on_profile_change)
+
+        def on_new_profile():
+            dialog = ttk.Toplevel(self.root)
+            dialog.title("New Profile")
+            ttk.Label(dialog, text="Profile name:").pack(padx=12, pady=(12, 4))
+            name_var = ttk.StringVar()
+            entry = ttk.Entry(dialog, textvariable=name_var)
+            entry.pack(padx=12, pady=4, fill='x')
+            entry.focus_set()
+
+            def create_and_close():
+                name = (name_var.get() or '').strip()
+                if not name:
+                    Messagebox.show_warning("Invalid Name", "Please enter a profile name.")
+                    return
+                self.profile_manager.set_current_profile(name)
+                # refresh combo values
+                self.profile_combo.configure(values=self.profile_manager.list_profiles())
+                self.profile_var.set(name)
+                on_profile_change()
+                dialog.destroy()
+
+            ttk.Button(dialog, text='Create', command=create_and_close, bootstyle='primary').pack(padx=12, pady=(6, 12))
+
+        ttk.Button(top_bar, text='New Profile', command=on_new_profile, bootstyle='secondary').pack(side='left')
+
         self.notebook = ttk.Notebook(self.root)
         self.notebook.pack(expand=True, fill='both')
         
@@ -174,6 +234,11 @@ class MainWindow:
         self.discovery_frame = ttk.Frame(self.notebook)
         self.notebook.add(self.discovery_frame, text='Discovery')
         self._setup_discovery_view()
+
+        # Deep Dive View
+        self.deep_dive_frame = ttk.Frame(self.notebook)
+        self.notebook.add(self.deep_dive_frame, text='Deep Dive')
+        self._setup_deep_dive_view()
     
     def _setup_library_view(self):
         """Setup the library view with consistent grid geometry management"""
@@ -479,6 +544,67 @@ class MainWindow:
         # Could add a label: "Seed Track: [self.current_track.title if self.current_track else 'None']"
         self.seed_track_label = ttk.Label(controls_frame, text="Seed: None selected")
         self.seed_track_label.grid(row=1, column=0, columnspan=4, padx=5, pady=5, sticky="w")
+
+    def _setup_deep_dive_view(self):
+        self.deep_dive_frame.grid_columnconfigure(0, weight=1)
+        self.deep_dive_frame.grid_rowconfigure(1, weight=1)
+
+        controls = ttk.Frame(self.deep_dive_frame, padding=10)
+        controls.grid(row=0, column=0, sticky='ew')
+        ttk.Label(controls, text="Artist Deep Dive (MusicBrainz)").grid(row=0, column=0, sticky='w')
+        self.dd_status = ttk.Label(controls, text="Idle")
+        self.dd_status.grid(row=0, column=1, sticky='e')
+
+        ttk.Button(controls, text="Deep Dive Selected Artist", command=self._deep_dive_current_artist,
+                   bootstyle='primary').grid(row=1, column=0, pady=6, sticky='w')
+
+        # Results tree
+        results_frame = ttk.Frame(self.deep_dive_frame)
+        results_frame.grid(row=1, column=0, sticky='nsew')
+        results_frame.grid_columnconfigure(0, weight=1)
+        results_frame.grid_rowconfigure(0, weight=1)
+
+        self.dd_tree = ttk.Treeview(results_frame, columns=("Title", "Type", "First-Release"), show='headings', bootstyle='dark')
+        self.dd_tree.heading("Title", text="Release Group")
+        self.dd_tree.heading("Type", text="Type")
+        self.dd_tree.heading("First-Release", text="First Release Date")
+        self.dd_tree.column("Title", width=400, stretch=True)
+        self.dd_tree.column("Type", width=120, stretch=False)
+        self.dd_tree.column("First-Release", width=140, stretch=False)
+        self.dd_tree.grid(row=0, column=0, sticky='nsew')
+        scr = ttk.Scrollbar(results_frame, orient='vertical', command=self.dd_tree.yview)
+        self.dd_tree.configure(yscrollcommand=scr.set)
+        scr.grid(row=0, column=1, sticky='ns')
+
+    def _deep_dive_current_artist(self):
+        if not self.current_track:
+            Messagebox.show_info("No Artist", "Select a track first in Library to deep dive its artist.")
+            return
+        artist_name = self.current_track.artist
+        try:
+            self.dd_status.config(text=f"Searching '{artist_name}'...")
+            artists = self.musicbrainz_service.search_artist(artist_name, limit=5)
+            if not artists:
+                self.dd_status.config(text="No artist match")
+                return
+            # pick top-scoring match
+            artist = sorted(artists, key=lambda a: a.get('score', 0), reverse=True)[0]
+            mbid = artist.get('id')
+            self.dd_status.config(text=f"Fetching release groups...")
+            rg_data = self.musicbrainz_service.get_release_groups_for_artist(mbid, limit=100, offset=0)
+            rgs = rg_data.get('release-groups', [])
+            # Render
+            for item in self.dd_tree.get_children():
+                self.dd_tree.delete(item)
+            for rg in rgs:
+                title = rg.get('title') or 'Untitled'
+                rtype = rg.get('primary-type') or '—'
+                fdate = rg.get('first-release-date') or '—'
+                self.dd_tree.insert('', 'end', values=(title, rtype, fdate))
+            self.dd_status.config(text=f"Found {len(rgs)} release groups")
+        except Exception as e:
+            self.dd_status.config(text="Error")
+            Messagebox.show_error("Deep Dive Error", f"Failed to fetch data: {e}")
 
     def update(self):
         """Update UI when library changes"""
