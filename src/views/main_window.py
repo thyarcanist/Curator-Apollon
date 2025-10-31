@@ -51,6 +51,10 @@ class MainWindow:
         self.entropy_service = entropy_service
         self.current_playlist_url = None
         self.current_track = None  # Add this to track selected track
+        # Preference flags
+        self.liked_var = ttk.BooleanVar(value=False)
+        self.loved_var = ttk.BooleanVar(value=False)
+        self.mood_dep_var = ttk.BooleanVar(value=False)
         
         # Load custom font
         font_path = Path(__file__).parent.parent / "appearance" / "fonts" / "CommitMono VariableFont.woff2"
@@ -293,6 +297,29 @@ class MainWindow:
             value_label = ttk.Label(track_grid, text=default)
             value_label.grid(row=i, column=1, sticky='w', padx=5, pady=2)
             self.track_values[label] = value_label
+
+        # Preference toggles
+        pref_frame = ttk.Frame(self.current_track_frame)
+        pref_frame.pack(fill='x', padx=10, pady=(5, 5))
+
+        def on_flag_change():
+            if not self.current_track:
+                return
+            try:
+                self.current_track.liked = bool(self.liked_var.get())
+                self.current_track.loved = bool(self.loved_var.get())
+                self.current_track.mood_dependent = bool(self.mood_dep_var.get())
+                self.library.save()
+                self.set_status("Preferences saved")
+            except Exception as e:
+                self.set_status(f"Error saving preferences: {e}")
+
+        ttk.Checkbutton(pref_frame, text="Liked", variable=self.liked_var,
+                        command=on_flag_change).pack(side='left', padx=(0, 10))
+        ttk.Checkbutton(pref_frame, text="Loved", variable=self.loved_var,
+                        command=on_flag_change).pack(side='left', padx=(0, 10))
+        ttk.Checkbutton(pref_frame, text="Mood-dependent", variable=self.mood_dep_var,
+                        command=on_flag_change).pack(side='left')
         
         # Navigation buttons at the bottom
         nav_frame = ttk.Frame(self.current_track_frame)
@@ -982,6 +1009,11 @@ class MainWindow:
             self.track_values['Time Signature:'].config(text=self.current_track.time_signature)
             self.track_values['Energy Level:'].config(text=str(self.current_track.energy_level or 'N/A'))
             self.track_values['Camelot Position:'].config(text=str(self.current_track.camelot_position or 'N/A'))
+
+            # Update preference toggles
+            self.liked_var.set(bool(getattr(self.current_track, 'liked', False)))
+            self.loved_var.set(bool(getattr(self.current_track, 'loved', False)))
+            self.mood_dep_var.set(bool(getattr(self.current_track, 'mood_dependent', False)))
             
             # Update navigation buttons
             tracks = self.library.get_all_tracks()
@@ -999,6 +1031,9 @@ class MainWindow:
                 label.config(text='N/A')
             self.prev_button.config(state='disabled')
             self.next_button.config(state='disabled')
+            self.liked_var.set(False)
+            self.loved_var.set(False)
+            self.mood_dep_var.set(False)
 
     def _update_analysis(self):
         """Update all analysis displays"""

@@ -50,7 +50,7 @@ class CuratorApollon:
             print(f"Icon not found at {icon_path}")
         
         # Initialize services and views
-        self.library = MusicLibrary()
+        self.library = MusicLibrary("default")
         self.spotify_service = SpotifyService()
         self.analysis_service = AnalysisService()
         

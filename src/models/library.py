@@ -35,12 +35,15 @@ class Track:
     time_signature: str = "4/4"  # Default to common time
     album_art_url: Optional[str] = None  # Add this field
     genres: List[str] = field(default_factory=list)
+    liked: bool = False
+    loved: bool = False
+    mood_dependent: bool = False
 
 class MusicLibrary:
-    def __init__(self):
+    def __init__(self, profile_name: str = "default"):
         self.tracks: List[Track] = []
         self.observers: List = []
-        self.app_data_dir: Path = self._get_app_data_dir() # Store for reuse
+        self.app_data_dir: Path = self._get_app_data_dir(profile_name) # Store for reuse
         self.save_file_path: Path = self.app_data_dir / "library.json"
         
         # Load contributions
@@ -51,20 +54,20 @@ class MusicLibrary:
 
         self._load_library()
     
-    def _get_app_data_dir(self) -> Path:
-        """Gets the application data directory, creating it if necessary."""
+    def _get_app_data_dir(self, profile_name: str) -> Path:
+        """Gets the application data directory for a profile, creating it if necessary."""
         if os.name == 'nt': # Windows
             app_data_base = Path(os.getenv('APPDATA', ''))
         else: # Linux, macOS, other Unix-like
             app_data_base = Path(os.getenv('XDG_DATA_HOME', Path.home() / ".local" / "share"))
         
-        app_dir = app_data_base / "CuratorApollon"
+        app_dir = app_data_base / "CuratorApollon" / profile_name
         app_dir.mkdir(parents=True, exist_ok=True)
         return app_dir
 
     def _get_save_file_path(self) -> Path:
         """Determines the full path to the library save file."""
-        return self._get_app_data_dir() / "library.json"
+        return self.app_data_dir / "library.json"
 
     def _apply_contribution_to_track(self, track: Track, contribution: TrackContribution):
         """Applies a contribution to a track, filling in missing (None or empty) fields."""
@@ -96,6 +99,10 @@ class MusicLibrary:
             print(f"Error saving library: {e}")
         except TypeError as e:
             print(f"Error serializing library for saving: {e}")
+
+    def save(self):
+        """Persist current library state to disk."""
+        self._save_library()
 
     def _load_library(self):
         """Loads the music library from a JSON file if it exists."""
