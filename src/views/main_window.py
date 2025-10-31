@@ -183,6 +183,32 @@ class MainWindow:
                         self.library.observers.remove(self)
                     except Exception:
                         pass
+                # If destination profile has no library yet, offer to copy current library
+                destination_dir = self.profile_manager.ensure_profile(new_profile)
+                dest_lib = destination_dir / 'library.json'
+                if not dest_lib.exists():
+                    current_tracks = []
+                    try:
+                        current_tracks = self.library.get_all_tracks()
+                    except Exception:
+                        current_tracks = []
+                    if current_tracks:
+                        resp = ScaledMessageDialog(
+                            self.root,
+                            "Copy Library",
+                            f"Profile '{new_profile}' has no library. Copy {len(current_tracks)} track(s) from current profile?",
+                            buttons=['Yes:primary', 'No:secondary']
+                        )
+                        if resp.result == 'Yes':
+                            try:
+                                # Persist current first to ensure latest state then copy bytes
+                                self.library.save()
+                                source_file = self.library.save_file_path
+                                if source_file.exists():
+                                    dest_lib.write_bytes(source_file.read_bytes())
+                            except Exception as e:
+                                self.set_status(f"Copy failed: {e}")
+                # Recreate library bound to new profile (will load file if present or just empty)
                 self.library = MusicLibrary(new_profile)
                 self.library.add_observer(self)
                 self.update()

@@ -46,6 +46,19 @@ class MusicLibrary:
         self.app_data_dir: Path = self._get_app_data_dir(profile_name) # Store for reuse
         self.save_file_path: Path = self.app_data_dir / "library.json"
         
+        # One-time legacy migration: move flat library.json into profile if present
+        try:
+            legacy_path = self._get_legacy_library_path()
+            if legacy_path and legacy_path.exists() and not self.save_file_path.exists():
+                # Copy legacy file into profile
+                self.app_data_dir.mkdir(parents=True, exist_ok=True)
+                legacy_data = legacy_path.read_bytes()
+                self.save_file_path.write_bytes(legacy_data)
+                # Optional: keep legacy file as backup; do not delete to be conservative
+                print(f"Migrated legacy library to {self.save_file_path}")
+        except Exception as e:
+            print(f"Legacy migration skipped due to error: {e}")
+
         # Load contributions
         self.contributions_file_path: Path = self.app_data_dir / "contributions.json"
         self.loaded_contributions: Dict[str, TrackContribution] = load_contributions_from_json(str(self.contributions_file_path))
@@ -68,6 +81,19 @@ class MusicLibrary:
     def _get_save_file_path(self) -> Path:
         """Determines the full path to the library save file."""
         return self.app_data_dir / "library.json"
+
+    def _get_legacy_library_path(self) -> Optional[Path]:
+        """Returns the legacy library.json path (pre-profile) if resolvable."""
+        try:
+            if os.name == 'nt':
+                app_data_base = Path(os.getenv('APPDATA', ''))
+            else:
+                app_data_base = Path(os.getenv('XDG_DATA_HOME', Path.home() / ".local" / "share"))
+            legacy_dir = app_data_base / "CuratorApollon"
+            legacy_path = legacy_dir / "library.json"
+            return legacy_path
+        except Exception:
+            return None
 
     def _apply_contribution_to_track(self, track: Track, contribution: TrackContribution):
         """Applies a contribution to a track, filling in missing (None or empty) fields."""

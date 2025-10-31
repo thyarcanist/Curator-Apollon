@@ -279,22 +279,38 @@ class SpotifyService:
             
         # Get track info from Spotify
         track_info = self.sp.track(track_id)
-        audio_features = self.sp.audio_features(track_id)[0]
-        
-        if not audio_features:
-            raise ValueError("Could not fetch audio features for this track")
+        bpm = 0.0
+        key = "Unknown"
+        camelot = "Unknown"
+        energy = 0.0
+        time_sig = "Unknown"
+        try:
+            features = self.sp.audio_features(track_id)[0]
+            if features:
+                bpm = features.get('tempo') or 0.0
+                k = features.get('key'); m = features.get('mode')
+                if k is not None and m is not None and k >= 0:
+                    key = self._convert_key(k, m)
+                    camelot = self._get_camelot_position(k, m)
+                energy = features.get('energy') or 0.0
+                ts = features.get('time_signature')
+                if isinstance(ts, int) and 3 <= ts <= 7:
+                    time_sig = f"{ts}/4"
+        except Exception as e:
+            # Gracefully degrade when audio-features endpoint is forbidden/deprecated/rate-limited
+            print(f"Audio features unavailable for {track_id}: {e}")
         
         return Track(
             id=track_id,
             title=track_info['name'],
             artist=track_info['artists'][0]['name'],
-            bpm=audio_features['tempo'],
-            key=self._convert_key(audio_features['key'], audio_features['mode']),
-            camelot_position=self._get_camelot_position(audio_features['key'], 
-                                                      audio_features['mode']),
-            energy_level=audio_features['energy'],
+            bpm=bpm,
+            key=key,
+            camelot_position=camelot,
+            energy_level=energy,
             spotify_url=f"https://open.spotify.com/track/{track_id}",
-            album_art_url=track_info['album']['images'][0]['url'] if track_info['album']['images'] else None
+            album_art_url=track_info['album']['images'][0]['url'] if track_info['album']['images'] else None,
+            time_signature=time_sig
         )
     
     def import_playlist_async(self, playlist_url: str, callback=None):
