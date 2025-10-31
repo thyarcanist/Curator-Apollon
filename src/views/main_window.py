@@ -142,6 +142,11 @@ class MainWindow:
         
         self._setup_ui()
         self.library.add_observer(self)
+        # Ensure UI reflects any tracks loaded at app start
+        try:
+            self.update()
+        except Exception:
+            pass
         self.set_status("Curator Apollon initialized.")
         if self.entropy_service is None:
             self.set_status("Warning: EntropyService (OccyByte API) not available. Quantum recommendations disabled.")
